@@ -11,11 +11,21 @@ Das Ergebnis wird angezeigt und kann heruntergeladen oder geteilt werden.
 - **Vorher / Nachher:** Vorher-Bild aus der Galerie wählen, Nachher-Foto live aufnehmen
   (Vorher-Bild wird zum Ausrichten halbtransparent eingeblendet). Beide Bilder werden
   zu einem Bild zusammengesetzt (Hochformat nebeneinander, Querformat untereinander).
-- **Adresse & Notiz:** Die Adresse lässt sich aus einer Liste der Hausnummern in der Nähe
-  (OpenStreetMap/Overpass, ca. 80 m) wählen oder von Hand eingeben. Dazu eine Notiz,
-  die im Stempel erscheint. Zuletzt verwendete Adressen und Notizen werden auf dem Handy gemerkt.
-- **Kamera:** Taschenlampe, Zoom (Buttons oder zwei Finger), Antippen zum Scharfstellen
-  (je nachdem, was das Handy unterstützt).
+- **Adresse & Notiz:** Die Adresse kann nur aus der direkten Umgebung gewählt werden
+  (Hausnummern im Umkreis von ca. 80 m laut OpenStreetMap/Overpass, nur bei GPS-Genauigkeit
+  bis ±100 m) – keine freie Eingabe, damit nicht manipuliert werden kann. Zuletzt verwendete
+  Adressen erscheinen nur in der Nähe und lassen sich löschen. Dazu eine Notiz im Stempel.
+- **Serie:** In der Foto-Kamera „Serie“ wählen, beliebig viele Fotos am Stück aufnehmen,
+  mit „Fertig“ abschließen. Danach alle herunterladen, teilen, als ZIP oder als PDF-Bericht.
+- **PDF-Bericht:** Fotobericht mit Firmenlogo, Adresse, Zeitraum und allen Fotos mit
+  Zeit, Adresse, Koordinaten und Notiz (wird direkt auf dem Handy erzeugt).
+- **Firmenlogo:** erscheint rechts im Stempel und im PDF-Kopf. Zum Austauschen einfach
+  `branding/firmenlogo.png` ersetzen (PNG mit transparentem Hintergrund, am besten im Querformat).
+- **Zeitabgleich:** Die Uhrzeit wird mit der Uhrzeit des Webservers abgeglichen. Der Stempel
+  nutzt die geprüfte Zeit und zeigt „✓ Zeit geprüft“. Ohne Internet wird die Handyuhr
+  verwendet und „Zeit ungeprüft“ angezeigt. Eine verstellte Handyuhr ändert die geprüfte Zeit nicht.
+- **Kamera:** Taschenlampe, Zoom (Buttons oder zwei Finger), Antippen zum Scharfstellen,
+  Weitwinkel „0,6×“ (bei Handys wie Samsung als eigene Rückkamera erkannt).
 - **Dateien:** Aufnahmezeit, GPS und Beschreibung stehen zusätzlich in den EXIF-Daten
   (z. B. für die Kartenansicht in Google Fotos). Dateiname mit Straße, z. B.
   `Foto_2026-11-19_14-32-05_Musterstrasse-12.jpg`.
@@ -32,6 +42,8 @@ Das Ergebnis wird angezeigt und kann heruntergeladen oder geteilt werden.
 | `index.html` | Seitenaufbau (Kamera, Verarbeitung, Ergebnis) |
 | `style.css` | Aussehen |
 | `app.js` | Kamera, GPS, Adresse, Stempel, Video, Vorher/Nachher, Download |
+| `export.js` | PDF-Bericht und ZIP-Datei erzeugen |
+| `branding/firmenlogo.png` | Firmenlogo (derzeit Testlogo) |
 | `exif.js` | EXIF-Daten schreiben (Zeit, GPS, Beschreibung) und Aufnahmedatum lesen |
 | `manifest.webmanifest`, `icons/` | Installation als App auf dem Handy |
 | `sw.js` | Service Worker (App startet auch offline) |

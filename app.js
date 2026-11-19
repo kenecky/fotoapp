@@ -2,8 +2,9 @@
 
 /*
  * Hier & Jetzt – Fotos und Videos aufnehmen und mit Zeitstempel, GPS-Koordinaten,
- * Adresse und Notiz stempeln. Alles passiert im Browser, nichts wird auf einem Server gespeichert.
- * Für Adressen wird nur die Position an OpenStreetMap (Nominatim / Overpass) geschickt.
+ * Adresse, Notiz und Firmenlogo stempeln. Alles passiert im Browser, nichts wird online gespeichert.
+ * Für Adressen wird nur die Position an OpenStreetMap (Nominatim / Overpass) geschickt,
+ * für den Zeitabgleich wird die Uhrzeit des Webservers abgefragt.
  */
 
 const CONFIG = {
@@ -16,6 +17,7 @@ const CONFIG = {
   nearbyRadiusMeters: 80,      // Umkreis für „Adressen in der Nähe“
   nearbyMax: 15,
   nearbyTimeoutMs: 12000,
+  selectMaxAccuracy: 100,      // Adresse wählen nur bei GPS-Genauigkeit bis ±100 m
   overrideResetMeters: 150,    // gewählte Adresse gilt, bis man sich so weit entfernt
   recentMax: 6,
   videoMaxSeconds: 120,
@@ -23,9 +25,18 @@ const CONFIG = {
   videoBitsPerSecond: 5000000,
   audioBitsPerSecond: 128000,
   compareMaxSide: 4096,        // max. Kantenlänge des Vorher/Nachher-Bildes
+  pdfImageMaxSide: 1600,       // Bildgröße im PDF-Bericht
+  timeSyncMaxAgeMs: 15 * 60 * 1000,  // so lange gilt ein Zeitabgleich
+  timeSyncIntervalMs: 5 * 60 * 1000,
+  timeWarnDiffMs: 60 * 1000,   // ab dieser Abweichung der Handyuhr wird gewarnt
+  companyLogoUrl: 'branding/firmenlogo.png', // Firmenlogo im Stempel und im PDF
 };
 
-const STORAGE = { addresses: 'hj.recentAddresses', notes: 'hj.recentNotes' };
+const STORAGE = {
+  addresses: 'hj.recentAddresses',
+  notes: 'hj.recentNotes',
+  seriesMode: 'hj.seriesMode',
+};
 const FONT = 'system-ui, Roboto, "Segoe UI", Arial, sans-serif';
 
 const $ = (id) => document.getElementById(id);
@@ -41,10 +52,15 @@ const el = {
   startGps: $('start-gps'),
   startDot: $('start-dot'),
   startAddr: $('start-addr'),
+  timeDot: $('time-dot'),
+  timeTitle: $('time-title'),
+  timeSub: $('time-sub'),
+  startVersion: $('start-version'),
   btnBack: $('btn-back'),
   video: $('video'),
   ghost: $('ghost'),
   focusRing: $('focus-ring'),
+  flash: $('flash'),
   gpsChip: $('gps-chip'),
   addrBtn: $('addr-btn'),
   addrLine: $('addr-line'),
@@ -56,26 +72,35 @@ const el = {
   recInfo: $('rec-info'),
   recTime: $('rec-time'),
   zoomBar: $('zoom-bar'),
+  shotMode: $('shot-mode'),
   btnDetails: $('btn-details'),
   shutter: $('btn-shutter'),
   btnGhost: $('btn-ghost'),
   ghostThumb: $('ghost-thumb'),
+  btnSeries: $('btn-series'),
+  seriesThumb: $('series-thumb'),
+  seriesCount: $('series-count'),
   sheet: $('sheet'),
+  sheetPanel: $('sheet-panel'),
+  sheetGrab: $('sheet-grab'),
   sheetClose: $('sheet-close'),
   addrList: $('addr-list'),
   addrStatus: $('addr-status'),
-  manualRow: $('manual-row'),
-  addrManual: $('addr-manual'),
   noteInput: $('note-input'),
   noteClear: $('note-clear'),
   noteRecent: $('note-recent'),
   sheetApply: $('sheet-apply'),
   busyText: $('busy-text'),
   resultTitle: $('result-title'),
+  resultSingle: $('result-single'),
+  resultGrid: $('result-grid'),
   resultImg: $('result-img'),
   resultVideo: $('result-video'),
   btnDownload: $('btn-download'),
+  downloadLabel: $('download-label'),
   btnShare: $('btn-share'),
+  btnPdf: $('btn-pdf'),
+  btnZip: $('btn-zip'),
   btnNew: $('btn-new'),
   btnHome: $('btn-home'),
   canvas: $('canvas'),
@@ -91,17 +116,28 @@ const state = {
   address: null,           // automatisch ermittelte Adresse { lat, lon, text, postcode, city }
   addressPending: null,
   lastAddressRequest: 0,
-  addrOverride: null,      // gewählte Adresse { key, text, atLat, atLon }
+  addrOverride: null,      // gewählte Adresse aus der Umgebung { key, text, atLat, atLon }
   note: '',
   nearby: null,            // { lat, lon, items }
   torch: false,
   zoom: 1,
   zoomCaps: null,
+  pendingZoom: null,
+  mainPresets: [],
+  lenses: null,            // { main, wide, labels }
+  lens: 'main',            // 'main' | 'wide'
   focusTimer: null,
   before: null,            // Vorher-Bild { bitmap, url, date }
   ghostOn: true,
+  seriesMode: false,
+  series: [],              // Fotos der laufenden Serie
+  seriesPending: 0,
+  seriesNo: 0,
+  controlsTrack: null,
+  seriesQueue: Promise.resolve(),
+  seriesSaved: true,
   rec: null,               // laufende Videoaufnahme
-  result: null,            // { blob, url, filename, kind }
+  shown: null,             // angezeigtes Ergebnis { kind, items }
 };
 
 /* ------------------------------------------------------------------ */
@@ -109,6 +145,7 @@ const state = {
 /* ------------------------------------------------------------------ */
 
 const pad2 = (n) => String(n).padStart(2, '0');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function isVisible(view) {
   return !view.classList.contains('hidden');
@@ -121,10 +158,14 @@ function loadList(key) {
   } catch (e) { return []; }
 }
 
+function saveList(key, list) {
+  try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) { /* egal */ }
+}
+
 function pushRecent(key, item, same) {
   const list = loadList(key).filter((x) => !same(x, item));
   list.unshift(item);
-  try { localStorage.setItem(key, JSON.stringify(list.slice(0, CONFIG.recentMax))); } catch (e) { /* egal */ }
+  saveList(key, list.slice(0, CONFIG.recentMax));
 }
 
 function distanceMeters(lat1, lon1, lat2, lon2) {
@@ -142,6 +183,107 @@ function formatDistance(m) {
 }
 
 const oneLine = (text) => (text || '').replace(/\n/g, ', ');
+
+/* ------------------------------------------------------------------ */
+/* Firmenlogo                                                          */
+/* ------------------------------------------------------------------ */
+
+const companyLogo = new Image();
+let companyLogoReady = false;
+companyLogo.onload = () => { companyLogoReady = companyLogo.naturalWidth > 0; };
+companyLogo.src = CONFIG.companyLogoUrl;
+
+/* ------------------------------------------------------------------ */
+/* Zeitabgleich mit dem Internet                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Die Uhrzeit wird aus dem „Date“-Kopf der Antwort des Webservers gelesen.
+ * Danach läuft die geprüfte Zeit über die interne, nicht verstellbare Uhr des
+ * Browsers (performance.now) weiter. Ein Verstellen der Handyuhr ändert sie nicht.
+ */
+const timeSync = {
+  serverAt: null,   // geprüfte Zeit (ms) zum Zeitpunkt perfAt
+  perfAt: null,
+  deviceDiff: 0,    // Handyuhr minus geprüfte Zeit
+  stale: false,     // nach Ruhezustand bis zum nächsten Abgleich ungültig
+  pending: null,
+  failed: false,
+};
+
+function syncTime() {
+  if (timeSync.pending) return timeSync.pending;
+  timeSync.pending = (async () => {
+    try {
+      const t0 = performance.now();
+      const res = await fetch('./?zeit=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
+      const t1 = performance.now();
+      const header = res.headers.get('Date');
+      const server = header ? Date.parse(header) : NaN;
+      if (!isFinite(server)) throw new Error('keine Serverzeit');
+      // Der Date-Kopf ist auf Sekunden gekürzt (+0,5 s) und kommt nach etwa der halben Laufzeit an
+      const serverNow = server + 500 + (t1 - t0) / 2;
+      timeSync.serverAt = serverNow;
+      timeSync.perfAt = t1;
+      timeSync.deviceDiff = Date.now() - serverNow;
+      timeSync.stale = false;
+      timeSync.failed = false;
+    } catch (err) {
+      console.warn('Zeitabgleich nicht möglich:', err);
+      timeSync.failed = true;
+    } finally {
+      timeSync.pending = null;
+      updateTimeUi();
+    }
+  })();
+  return timeSync.pending;
+}
+
+function timeVerified() {
+  return timeSync.perfAt != null && !timeSync.stale &&
+    performance.now() - timeSync.perfAt < CONFIG.timeSyncMaxAgeMs;
+}
+
+/** Geprüfte Zeit zu einem performance.now()-Zeitpunkt (oder Handyzeit, falls nicht geprüft). */
+function trustedTime(perf = performance.now(), deviceMs = Date.now()) {
+  if (timeVerified()) return { date: new Date(timeSync.serverAt + (perf - timeSync.perfAt)), verified: true };
+  return { date: new Date(deviceMs), verified: false };
+}
+
+/** Vor einem Foto kurz abgleichen, falls der letzte Abgleich etwas her ist. */
+async function ensureTimeSync() {
+  const age = timeSync.perfAt == null ? Infinity : performance.now() - timeSync.perfAt;
+  if (timeVerified() && age < CONFIG.timeSyncIntervalMs) return;
+  if (!navigator.onLine) return;
+  await Promise.race([syncTime(), sleep(2500)]);
+}
+
+function updateTimeUi() {
+  let level, title, sub;
+  if (timeVerified()) {
+    const diff = Math.round(timeSync.deviceDiff / 1000);
+    level = 'good';
+    title = 'Uhrzeit geprüft';
+    if (Math.abs(timeSync.deviceDiff) >= CONFIG.timeWarnDiffMs) {
+      level = 'medium';
+      const min = Math.round(Math.abs(diff) / 60);
+      sub = `Handyuhr geht ${min >= 1 ? min + ' Min.' : Math.abs(diff) + ' Sek.'} ${diff > 0 ? 'vor' : 'nach'} – der Stempel nutzt die Internetzeit.`;
+    } else {
+      sub = 'Mit Internetzeit abgeglichen' + (Math.abs(diff) >= 2 ? ` (Handyuhr ${diff > 0 ? '+' : ''}${diff} s)` : '');
+    }
+  } else if (timeSync.pending && !timeSync.failed) {
+    level = 'wait';
+    title = 'Uhrzeit wird geprüft …';
+    sub = '';
+  } else {
+    level = 'bad';
+    title = 'Uhrzeit nicht geprüft';
+    sub = 'Kein Internet – der Stempel nutzt die Handyuhr.';
+  }
+  el.timeDot.className = 'gps-dot dot-' + level;
+  el.timeTitle.textContent = title;
+  el.timeSub.textContent = sub;
+}
 
 /* ------------------------------------------------------------------ */
 /* Ansichten                                                           */
@@ -181,8 +323,9 @@ async function startCamera() {
   }
 
   const wantAudio = state.mode === 'video';
+  const useWide = state.lens === 'wide' && state.lenses && state.lenses.wide;
   const base = {
-    facingMode: { ideal: 'environment' },
+    ...(useWide ? { deviceId: { exact: state.lenses.wide } } : { facingMode: { ideal: 'environment' } }),
     // Foto: so hoch wie möglich. Video: Full HD, damit die Aufnahme flüssig bleibt.
     width: { ideal: wantAudio ? 1920 : 4096 },
     height: { ideal: wantAudio ? 1080 : 4096 },
@@ -212,6 +355,14 @@ async function startCamera() {
   if (!stream) {
     console.error(lastErr);
     el.shutter.disabled = true;
+    if (useWide) {
+      // Weitwinkel lässt sich nicht öffnen: zurück zur Hauptkamera
+      state.lens = 'main';
+      if (state.lenses) state.lenses.wide = null;
+      showCameraMessage('Weitwinkel-Kamera nicht verfügbar.', 3000);
+      startCamera();
+      return;
+    }
     const name = lastErr && lastErr.name;
     if (name === 'NotAllowedError') {
       showCameraMessage('Kein Zugriff auf die Kamera. Bitte in den Chrome-Einstellungen Kamera (und für Videos Mikrofon) für diese Seite erlauben und neu laden.');
@@ -235,9 +386,10 @@ async function startCamera() {
   el.shutter.disabled = false;
   if (wantAudio && !stream.getAudioTracks().length) {
     showCameraMessage('Mikrofon nicht verfügbar – Video wird ohne Ton aufgenommen.', 4000);
-  } else {
+  } else if (!el.camMessage.textContent.startsWith('Weitwinkel')) {
     showCameraMessage('');
   }
+  await detectLenses();
   setupCameraControls();
   // Manche Handys melden Zoom/Taschenlampe erst nach kurzer Zeit
   setTimeout(setupCameraControls, 800);
@@ -265,6 +417,48 @@ function trackCaps() {
   try { return t && t.getCapabilities ? t.getCapabilities() : {}; } catch (e) { return {}; }
 }
 
+/* ---------- Weitwinkel (eigene Rückkamera, z. B. Samsung 0,6×) ---------- */
+
+/*
+ * Chrome zeigt Ultraweitwinkel-Objektive auf vielen Android-Handys (z. B. Samsung)
+ * nicht als Zoomstufe, sondern als eigene Rückkamera („camera2 2, facing back“).
+ * Die Hauptkamera ist die, die Chrome für „Rückseite“ automatisch wählt.
+ */
+async function detectLenses() {
+  if (state.lenses || state.lens !== 'main') return;
+  const t = videoTrack();
+  if (!t || !navigator.mediaDevices.enumerateDevices) return;
+  try {
+    const mainId = (t.getSettings && t.getSettings().deviceId) || '';
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    const backs = devices.filter((d) => /back|rück|rear|environment/i.test(d.label));
+    const num = (label) => {
+      const m = label.match(/(\d+)/);
+      return m ? parseInt(m[1], 10) : 999;
+    };
+    const others = backs.filter((d) => d.deviceId && d.deviceId !== mainId)
+      .sort((a, b) => num(a.label) - num(b.label));
+    state.lenses = {
+      main: mainId,
+      wide: others.length ? others[0].deviceId : null,
+      labels: devices.map((d) => (d.deviceId === mainId ? '★ ' : '') + (d.label || '(ohne Namen)')),
+    };
+  } catch (e) {
+    console.warn('Kameras nicht ermittelbar:', e);
+  }
+}
+
+function switchLens(lens, zoomAfter) {
+  if (state.rec || state.lens === lens) {
+    if (zoomAfter != null) setZoom(zoomAfter);
+    return;
+  }
+  state.lens = lens;
+  state.pendingZoom = zoomAfter != null ? zoomAfter : null;
+  stopCamera();
+  startCamera();
+}
+
 /* ---------- Taschenlampe, Zoom, Fokus ---------- */
 
 function setupCameraControls() {
@@ -275,46 +469,77 @@ function setupCameraControls() {
   el.btnTorch.classList.toggle('hidden', !caps.torch);
   el.btnTorch.classList.toggle('active', state.torch);
 
-  const z = caps.zoom;
-  if (z && z.max > z.min) {
-    const settings = t.getSettings ? t.getSettings() : {};
-    state.zoomCaps = z;
-    state.zoom = settings.zoom || Math.max(1, z.min);
-    const presets = [];
-    if (z.min < 0.95) presets.push(z.min);            // Weitwinkel, falls vorhanden
-    for (const p of [1, 2, 4, 8]) if (p >= z.min && p <= z.max) presets.push(p);
-    renderZoomBar(presets);
+  if (state.lens === 'main') {
+    const z = caps.zoom;
+    if (z && z.max > z.min) {
+      const settings = t.getSettings ? t.getSettings() : {};
+      if (state.controlsTrack !== t) state.zoom = settings.zoom || Math.max(1, z.min); // nur beim ersten Mal
+      state.zoomCaps = z;
+      const presets = [];
+      if (z.min < 0.95) presets.push(z.min);       // Weitwinkel als Zoomstufe, falls das Handy das so meldet
+      for (const p of [1, 2, 4, 8]) if (p >= z.min && p <= z.max) presets.push(p);
+      state.mainPresets = presets;
+    } else {
+      state.zoomCaps = null;
+      state.zoom = 1;
+      state.mainPresets = [];
+    }
+    if (state.pendingZoom != null) {
+      const z2 = state.pendingZoom;
+      state.pendingZoom = null;
+      setZoom(z2);
+    }
   } else {
-    state.zoomCaps = null;
-    el.zoomBar.classList.add('hidden');
+    state.zoomCaps = null; // im Weitwinkel kein Zoom
   }
+  state.controlsTrack = t;
+  renderZoomBar();
 }
 
 function formatZoom(z) {
   return String(Math.round(z * 10) / 10).replace('.', ',') + '×';
 }
 
-function renderZoomBar(presets) {
+function renderZoomBar() {
+  const items = [];
+  const hasWideLens = !!(state.lenses && state.lenses.wide);
+  const zoomHasWide = state.mainPresets.some((p) => p < 0.95);
+  if (hasWideLens && !zoomHasWide) items.push({ lens: 'wide', zoom: 0.6 });
+  for (const p of state.mainPresets) items.push({ lens: 'main', zoom: p });
+  if (hasWideLens && !state.mainPresets.length) items.push({ lens: 'main', zoom: 1 });
+
   el.zoomBar.innerHTML = '';
-  for (const p of presets) {
+  for (const it of items) {
     const b = document.createElement('button');
     b.className = 'zoom-btn';
-    b.dataset.zoom = String(p);
-    b.addEventListener('click', () => setZoom(p));
+    b.dataset.lens = it.lens;
+    b.dataset.zoom = String(it.zoom);
+    b.addEventListener('click', () => {
+      if (it.lens === 'wide') switchLens('wide');
+      else if (state.lens === 'wide') switchLens('main', it.zoom);
+      else setZoom(it.zoom);
+    });
     el.zoomBar.appendChild(b);
   }
-  el.zoomBar.classList.toggle('hidden', presets.length < 2);
+  el.zoomBar.classList.toggle('hidden', items.length < 2);
   updateZoomUi();
 }
 
 function updateZoomUi() {
   const btns = [...el.zoomBar.children];
   let active = null;
-  for (const b of btns) if (parseFloat(b.dataset.zoom) <= state.zoom + 0.05) active = b;
+  if (state.lens === 'wide') {
+    active = btns.find((b) => b.dataset.lens === 'wide') || null;
+  } else {
+    for (const b of btns) {
+      if (b.dataset.lens === 'main' && parseFloat(b.dataset.zoom) <= state.zoom + 0.05) active = b;
+    }
+  }
   for (const b of btns) {
     const z = parseFloat(b.dataset.zoom);
     b.classList.toggle('active', b === active);
-    b.textContent = b === active && Math.abs(z - state.zoom) > 0.05 ? formatZoom(state.zoom) : formatZoom(z);
+    const showCurrent = b === active && b.dataset.lens === 'main' && Math.abs(z - state.zoom) > 0.05;
+    b.textContent = showCurrent ? formatZoom(state.zoom) : formatZoom(z);
   }
 }
 
@@ -471,12 +696,7 @@ function checkOverrideDistance(pos) {
   const o = state.addrOverride;
   if (!o) return;
   const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-  if (accuracy > 100) return;
-  if (o.atLat == null) {
-    o.atLat = lat;
-    o.atLon = lon;
-    return;
-  }
+  if (accuracy > CONFIG.selectMaxAccuracy) return;
   if (distanceMeters(o.atLat, o.atLon, lat, lon) > CONFIG.overrideResetMeters) {
     state.addrOverride = null;
     if (isVisible(el.viewCamera)) {
@@ -513,7 +733,7 @@ function updateGpsUi() {
   el.gpsChip.textContent = text;
   el.gpsChip.className = 'chip chip-' + level;
   const camAddr = currentAddressText(p);
-  el.addrLine.textContent = camAddr ? oneLine(camAddr) : (p ? 'Adresse wird ermittelt …' : 'Adresse wählen');
+  el.addrLine.textContent = camAddr ? oneLine(camAddr) : (p ? 'Adresse wird ermittelt …' : 'Kein Standort');
   el.addrBtn.classList.toggle('chosen', !!state.addrOverride);
 
   // Startseite
@@ -661,6 +881,10 @@ async function fetchNearby(lat, lon) {
 /* Auswahlfenster „Adresse & Notiz“                                    */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Gegen Manipulation: Es kann nur eine Adresse aus der direkten Umgebung des
+ * aktuellen GPS-Standorts gewählt werden (keine freie Eingabe).
+ */
 const sheet = { selected: 'auto', options: new Map(), token: 0 };
 
 const isSheetOpen = () => !el.sheet.classList.contains('hidden');
@@ -669,11 +893,10 @@ function openSheet() {
   if (state.rec || isSheetOpen()) return;
   history.pushState({ view: 'sheet' }, '');
   sheet.selected = state.addrOverride ? state.addrOverride.key : 'auto';
-  el.addrManual.value = state.addrOverride && state.addrOverride.key === 'manual'
-    ? oneLine(state.addrOverride.text) : '';
   el.noteInput.value = state.note;
   renderNoteRecent();
   renderAddrOptions([], 'loading');
+  el.sheetPanel.style.transform = '';
   el.sheet.classList.remove('hidden');
   requestAnimationFrame(() => el.sheet.classList.add('open'));
   loadNearby();
@@ -681,8 +904,13 @@ function openSheet() {
 
 function hideSheet() {
   el.sheet.classList.remove('open');
-  document.activeElement && document.activeElement.blur && document.activeElement.blur();
-  setTimeout(() => { if (!el.sheet.classList.contains('open')) el.sheet.classList.add('hidden'); }, 220);
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  setTimeout(() => {
+    if (!el.sheet.classList.contains('open')) {
+      el.sheet.classList.add('hidden');
+      el.sheetPanel.style.transform = '';
+    }
+  }, 240);
 }
 
 function closeSheet() {
@@ -690,10 +918,46 @@ function closeSheet() {
   else hideSheet();
 }
 
+/* Fenster nach unten wegwischen */
+(function setupSheetDrag() {
+  const panel = el.sheetPanel;
+  let startY = null;
+  let dy = 0;
+  let t0 = 0;
+  el.sheetGrab.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    startY = e.clientY;
+    dy = 0;
+    t0 = Date.now();
+    panel.style.transition = 'none';
+    el.sheetGrab.setPointerCapture(e.pointerId);
+  });
+  el.sheetGrab.addEventListener('pointermove', (e) => {
+    if (startY == null) return;
+    dy = Math.max(0, e.clientY - startY);
+    panel.style.transform = `translateY(${dy}px)`;
+  });
+  const end = () => {
+    if (startY == null) return;
+    startY = null;
+    panel.style.transition = '';
+    const fast = dy > 40 && Date.now() - t0 < 300;
+    if (dy > 110 || fast) {
+      panel.style.transform = 'translateY(100%)';
+      closeSheet();
+    } else {
+      panel.style.transform = '';
+    }
+  };
+  el.sheetGrab.addEventListener('pointerup', end);
+  el.sheetGrab.addEventListener('pointercancel', end);
+})();
+
 async function loadNearby() {
   const token = ++sheet.token;
   const pos = freshPosition();
   if (!pos) { renderAddrOptions([], 'nogps'); return; }
+  if (pos.coords.accuracy > CONFIG.selectMaxAccuracy) { renderAddrOptions([], 'inaccurate'); return; }
   if (!navigator.onLine) { renderAddrOptions([], 'offline'); return; }
   try {
     const items = await fetchNearby(pos.coords.latitude, pos.coords.longitude);
@@ -704,27 +968,42 @@ async function loadNearby() {
   }
 }
 
-function addrOption(key, title, sub, badge) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'addr-opt';
-  b.dataset.key = key;
-  b.innerHTML = '<span class="radio"></span><span class="addr-opt-text"><span class="addr-opt-title"></span>' +
+function addrOption(key, title, sub, badge, onDelete) {
+  const row = document.createElement('div');
+  row.className = 'addr-opt';
+  row.dataset.key = key;
+  row.setAttribute('role', 'button');
+  row.tabIndex = 0;
+  row.innerHTML = '<span class="radio"></span><span class="addr-opt-text"><span class="addr-opt-title"></span>' +
     '<span class="addr-opt-sub"></span></span>';
-  b.querySelector('.addr-opt-title').textContent = title;
-  const subEl = b.querySelector('.addr-opt-sub');
+  row.querySelector('.addr-opt-title').textContent = title;
+  const subEl = row.querySelector('.addr-opt-sub');
   if (sub) subEl.textContent = sub; else subEl.remove();
   if (badge) {
     const s = document.createElement('span');
     s.className = 'addr-opt-badge';
     s.textContent = badge;
-    b.appendChild(s);
+    row.appendChild(s);
   }
-  b.addEventListener('click', () => {
+  if (onDelete) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'addr-del';
+    del.setAttribute('aria-label', 'Aus der Liste löschen');
+    del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onDelete();
+    });
+    row.appendChild(del);
+  }
+  const select = () => {
     sheet.selected = key;
     updateSheetSelection();
-  });
-  return b;
+  };
+  row.addEventListener('click', select);
+  row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') select(); });
+  return row;
 }
 
 function groupLabel(text) {
@@ -735,7 +1014,10 @@ function groupLabel(text) {
 }
 
 function renderAddrOptions(nearby, status) {
+  sheet.lastNearby = nearby;
+  sheet.lastStatus = status;
   const pos = freshPosition();
+  const canChoose = pos && pos.coords.accuracy <= CONFIG.selectMaxAccuracy;
   const list = el.addrList;
   list.innerHTML = '';
   sheet.options.clear();
@@ -754,22 +1036,30 @@ function renderAddrOptions(nearby, status) {
     }
   }
 
-  // Zuletzt verwendet
-  const shown = new Set(nearby.map((n) => n.text));
-  const recent = loadList(STORAGE.addresses).filter((r) => r && r.text && !shown.has(r.text));
-  if (recent.length) {
-    list.appendChild(groupLabel('Zuletzt verwendet'));
-    for (const r of recent) {
-      const key = 'recent:' + r.text;
-      const [line1, line2] = r.text.split('\n');
-      const dist = pos && r.lat != null ? distanceMeters(pos.coords.latitude, pos.coords.longitude, r.lat, r.lon) : null;
-      sheet.options.set(key, { key, text: r.text });
-      list.appendChild(addrOption(key, line1, line2 || '', dist != null ? formatDistance(dist) : ''));
+  // Zuletzt verwendet – nur, wenn ganz in der Nähe des aktuellen Standorts
+  if (canChoose) {
+    const shown = new Set(nearby.map((n) => n.text));
+    const recent = loadList(STORAGE.addresses).filter((r) => r && r.text && r.lat != null && !shown.has(r.text));
+    const near = recent
+      .map((r) => ({ ...r, dist: distanceMeters(pos.coords.latitude, pos.coords.longitude, r.lat, r.lon) }))
+      .filter((r) => r.dist <= CONFIG.overrideResetMeters);
+    if (near.length) {
+      list.appendChild(groupLabel('Zuletzt verwendet'));
+      for (const r of near) {
+        const key = 'recent:' + r.text;
+        const [line1, line2] = r.text.split('\n');
+        sheet.options.set(key, { key, text: r.text });
+        list.appendChild(addrOption(key, line1, line2 || '', formatDistance(r.dist), () => {
+          saveList(STORAGE.addresses, loadList(STORAGE.addresses).filter((x) => !x || x.text !== r.text));
+          if (sheet.selected === key) sheet.selected = 'auto';
+          renderAddrOptions(sheet.lastNearby || [], sheet.lastStatus || 'ok');
+        }));
+      }
     }
   }
 
-  // Eine früher gewählte Adresse, die gerade nicht in der Liste steht
-  if (sheet.selected !== 'auto' && sheet.selected !== 'manual' && !sheet.options.has(sheet.selected)) {
+  // Die aktuell gewählte Adresse, falls sie gerade nicht in der Liste steht
+  if (sheet.selected !== 'auto' && !sheet.options.has(sheet.selected)) {
     const o = state.addrOverride;
     if (o && o.key === sheet.selected) {
       sheet.options.set(o.key, { key: o.key, text: o.text });
@@ -780,9 +1070,11 @@ function renderAddrOptions(nearby, status) {
     }
   }
 
+  const acc = pos ? Math.round(pos.coords.accuracy) : 0;
   const messages = {
     loading: 'Adressen in der Nähe werden gesucht …',
-    nogps: 'Ohne GPS-Standort keine Adressen in der Nähe. Bitte unten eine Adresse eingeben.',
+    nogps: 'Ohne GPS-Standort kann keine Adresse gewählt werden.',
+    inaccurate: `GPS zu ungenau (±${acc} m). Eine Adresse kann erst ab ±${CONFIG.selectMaxAccuracy} m gewählt werden.`,
     offline: 'Keine Internetverbindung – Adressen in der Nähe nicht verfügbar.',
     error: 'Adressen in der Nähe konnten nicht geladen werden.',
     ok: nearby.length ? '' : 'Keine weiteren Adressen in der Nähe gefunden.',
@@ -803,7 +1095,6 @@ function updateSheetSelection() {
   for (const b of el.addrList.querySelectorAll('.addr-opt')) {
     b.classList.toggle('selected', b.dataset.key === sheet.selected);
   }
-  el.manualRow.classList.toggle('selected', sheet.selected === 'manual');
 }
 
 function renderNoteRecent() {
@@ -821,21 +1112,18 @@ function renderNoteRecent() {
 
 function applySheet() {
   const pos = freshPosition();
-  const at = pos
-    ? { atLat: pos.coords.latitude, atLon: pos.coords.longitude }
-    : { atLat: null, atLon: null };
-
   let o = null;
-  if (sheet.selected === 'manual') {
-    const t = el.addrManual.value.trim();
-    if (t) o = { key: 'manual', text: t, ...at };
-  } else if (sheet.selected !== 'auto') {
+  if (sheet.selected !== 'auto' && pos && pos.coords.accuracy <= CONFIG.selectMaxAccuracy) {
     const opt = sheet.options.get(sheet.selected);
-    if (opt) o = { key: sheet.selected, text: opt.text, ...at };
+    if (opt) {
+      o = state.addrOverride && state.addrOverride.key === sheet.selected
+        ? state.addrOverride
+        : { key: sheet.selected, text: opt.text, atLat: pos.coords.latitude, atLon: pos.coords.longitude };
+    }
   }
   state.addrOverride = o;
   if (o) {
-    pushRecent(STORAGE.addresses, { text: o.text, lat: at.atLat, lon: at.atLon }, (a, b) => a.text === b.text);
+    pushRecent(STORAGE.addresses, { text: o.text, lat: o.atLat, lon: o.atLon }, (a, b) => a.text === b.text);
   }
 
   state.note = el.noteInput.value.trim().slice(0, 80);
@@ -913,10 +1201,16 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+
 /**
- * Zeichnet den Stempel (halbtransparenter Balken mit Text) auf eine eigene Fläche
- * in voller Bildbreite. Sie wird dann unten ins Foto bzw. in jedes Videobild gesetzt.
- * info: { timestamp, note, address, coords }
+ * Zeichnet den Stempel (halbtransparenter Balken mit Text und Firmenlogo) auf eine
+ * eigene Fläche in voller Bildbreite. Sie wird unten ins Foto bzw. in jedes Videobild gesetzt.
+ * info: { timestamp, timeVerified, note, address, coords }
  */
 function renderStamp(w, h, info, target) {
   const canvas = target || document.createElement('canvas');
@@ -924,40 +1218,68 @@ function renderStamp(w, h, info, target) {
   const fontSize = Math.max(14, Math.round(Math.min(w, h) * 0.032));
   const lineHeight = Math.round(fontSize * 1.3);
   const pad = Math.round(fontSize * 0.8);
-  const maxWidth = w - pad * 2;
 
-  const rows = []; // [text, fett?, farbe]
-  const add = (text, bold, color) => {
+  // Firmenlogo rechts auf einer hellen Fläche
+  let plate = null;
+  if (companyLogoReady) {
+    const ph = Math.round(fontSize * 3.4);
+    const inner = Math.round(ph * 0.14);
+    const ratio = companyLogo.naturalWidth / companyLogo.naturalHeight;
+    let lw = (ph - inner * 2) * ratio;
+    const pw = Math.min(Math.round(lw + inner * 2), Math.round(w * 0.32));
+    lw = pw - inner * 2;
+    plate = { w: pw, h: ph, inner, lw, lh: lw / ratio };
+  }
+  const maxWidth = w - pad * 2 - (plate ? plate.w + pad : 0);
+
+  const rows = []; // [text, fett?, farbe, zusatz]
+  const add = (text, bold, color, extra) => {
     ctx.font = `${bold ? 700 : 400} ${fontSize}px ${FONT}`;
-    for (const l of wrapText(ctx, text, maxWidth)) rows.push([l, bold, color]);
+    const lines = wrapText(ctx, text, maxWidth);
+    lines.forEach((l, i) => rows.push([l, bold, color, i === lines.length - 1 ? extra : null]));
   };
 
-  add(info.timestamp, true, '#ffffff');
+  add(info.timestamp, true, '#ffffff', info.timeVerified
+    ? { text: '  ✓ Zeit geprüft', color: '#86EFAC' }
+    : { text: '  Zeit ungeprüft', color: '#FCD34D' });
   if (info.note) add(info.note, true, '#7DD3FC');
   if (info.address) add(info.address, false, '#ffffff');
   if (info.coords) {
     if (!info.address) add('Adresse nicht verfügbar', false, '#ffd27a');
     add(info.coords, false, '#ffffff');
-  } else if (info.address) {
-    add('Kein GPS-Standort – Adresse manuell gewählt', false, '#ffb4ab');
   } else {
     add('Kein Standort verfügbar', true, '#ffb4ab');
   }
 
-  const boxHeight = rows.length * lineHeight + pad * 2;
+  const boxHeight = Math.max(rows.length * lineHeight, plate ? plate.h : 0) + pad * 2;
   canvas.width = w;
   canvas.height = boxHeight; // setzt auch den Zeichenzustand zurück
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
   ctx.fillRect(0, 0, w, boxHeight);
 
+  if (plate) {
+    const px = w - pad - plate.w;
+    const py = Math.round((boxHeight - plate.h) / 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+    roundRect(ctx, px, py, plate.w, plate.h, Math.round(plate.h * 0.16));
+    ctx.fill();
+    ctx.drawImage(companyLogo, px + plate.inner, py + (plate.h - plate.lh) / 2, plate.lw, plate.lh);
+  }
+
   ctx.textBaseline = 'top';
   ctx.shadowColor = 'rgba(0,0,0,0.6)';
   ctx.shadowBlur = Math.round(fontSize * 0.15);
   let y = pad + Math.round((lineHeight - fontSize) / 2);
-  for (const [text, bold, color] of rows) {
+  for (const [text, bold, color, extra] of rows) {
     ctx.font = `${bold ? 700 : 400} ${fontSize}px ${FONT}`;
     ctx.fillStyle = color;
     ctx.fillText(text, pad, y);
+    if (extra) {
+      const x = pad + ctx.measureText(text).width;
+      ctx.font = `600 ${Math.round(fontSize * 0.8)}px ${FONT}`;
+      ctx.fillStyle = extra.color;
+      ctx.fillText(extra.text, x, y + Math.round(fontSize * 0.15));
+    }
     y += lineHeight;
   }
   return canvas;
@@ -968,77 +1290,185 @@ function exifDescription(note, address) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Foto (auch Nachher-Foto beim Vorher/Nachher-Vergleich)              */
+/* Foto (einzeln, Serie, Nachher-Foto beim Vorher/Nachher-Vergleich)   */
 /* ------------------------------------------------------------------ */
 
-function canvasToBlob(canvas) {
+function canvasToBlob(canvas, quality = CONFIG.jpegQuality) {
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Bild konnte nicht erzeugt werden'))),
-      'image/jpeg', CONFIG.jpegQuality);
+      'image/jpeg', quality);
   });
 }
 
-async function takePhoto() {
+/** Kamerabild sofort einfrieren (Zeitpunkt = Auslösen). */
+function captureFrame() {
   const video = el.video;
-  if (!state.stream || !video.videoWidth) return;
-  el.shutter.disabled = true;
-
-  // 1. Bild sofort einfrieren (Zeitpunkt = Auslösen)
-  const takenAt = new Date();
   const w = video.videoWidth;
   const h = video.videoHeight;
-  const canvas = el.canvas;
+  const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
+  canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+  return {
+    canvas, w, h,
+    perf: performance.now(),
+    device: Date.now(),
+    note: state.note,
+    compare: state.mode === 'compare' && state.before ? state.before : null,
+  };
+}
+
+/** Stempel, Zusammensetzen, EXIF – liefert ein fertiges Ergebnis. */
+async function processFrame(frame, status = () => {}) {
+  status(freshPosition() ? 'Adresse wird ermittelt …' : 'Standort wird ermittelt …');
+  const pos = await getPositionForPhoto();
+  status('Adresse wird ermittelt …');
+  const address = await getAddressForPhoto(pos);
+  status('Uhrzeit wird geprüft …');
+  await ensureTimeSync();
+  const t = trustedTime(frame.perf, frame.device);
+
+  status('Foto wird gespeichert …');
+  const { canvas, w, h } = frame;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, w, h);
-  const note = state.note;
+  const coords = pos ? formatCoords(pos) : null;
+  const stamp = renderStamp(w, h, {
+    timestamp: formatTimestamp(t.date),
+    timeVerified: t.verified,
+    note: frame.note,
+    address,
+    coords,
+  });
+  ctx.drawImage(stamp, 0, h - stamp.height);
 
-  show(el.viewBusy);
+  let out = canvas;
+  let prefix = 'Foto';
+  let kind = 'photo';
+  if (frame.compare) {
+    status('Vorher/Nachher wird erstellt …');
+    out = composeBeforeAfter(frame.compare, canvas);
+    prefix = 'VorherNachher';
+    kind = 'compare';
+  }
 
+  let blob = await canvasToBlob(out);
   try {
-    // 2. Position und Adresse
-    el.busyText.textContent = freshPosition() ? 'Adresse wird ermittelt …' : 'Standort wird ermittelt …';
-    const pos = await getPositionForPhoto();
-    el.busyText.textContent = 'Adresse wird ermittelt …';
-    const address = await getAddressForPhoto(pos);
+    blob = await Exif.insert(blob, { date: t.date, pos, description: exifDescription(frame.note, address) });
+  } catch (e) {
+    console.warn('EXIF konnte nicht geschrieben werden:', e);
+  }
 
-    // 3. Stempel zeichnen
-    el.busyText.textContent = 'Foto wird gespeichert …';
-    const stamp = renderStamp(w, h, {
-      timestamp: formatTimestamp(takenAt),
-      note,
+  return {
+    kind,
+    blob,
+    url: URL.createObjectURL(blob),
+    filename: makeFilename(prefix, t.date, address, 'jpg'),
+    width: out.width,
+    height: out.height,
+    meta: {
+      date: t.date,
+      verified: t.verified,
       address,
-      coords: pos ? formatCoords(pos) : null,
-    });
-    ctx.drawImage(stamp, 0, h - stamp.height);
+      coords,
+      note: frame.note,
+      compareDate: frame.compare && frame.compare.date,
+    },
+  };
+}
 
-    // 4. Bei Vorher/Nachher beide Bilder zusammensetzen
-    let out = canvas;
-    let prefix = 'Foto';
-    let kind = 'photo';
-    if (state.mode === 'compare' && state.before) {
-      el.busyText.textContent = 'Vorher/Nachher wird erstellt …';
-      out = composeBeforeAfter(state.before, canvas);
-      prefix = 'VorherNachher';
-      kind = 'compare';
-    }
+function flash() {
+  el.flash.classList.remove('on');
+  void el.flash.offsetWidth;
+  el.flash.classList.add('on');
+}
 
-    let blob = await canvasToBlob(out);
-    try {
-      blob = await Exif.insert(blob, { date: takenAt, pos, description: exifDescription(note, address) });
-    } catch (e) {
-      console.warn('EXIF konnte nicht geschrieben werden:', e);
-    }
+async function takePhoto() {
+  if (!state.stream || !el.video.videoWidth) return;
+  const frame = captureFrame();
 
+  // Serie: Kamera bleibt offen, das Foto wird im Hintergrund fertiggestellt
+  if (state.mode === 'photo' && state.seriesMode) {
+    flash();
+    state.seriesPending++;
+    state.seriesSaved = false;
+    updateSeriesUi();
+    state.seriesQueue = state.seriesQueue
+      .then(() => processFrame(frame))
+      .then((item) => {
+        state.seriesNo++;
+        item.filename = item.filename.replace(/\.jpg$/, `_${pad2(state.seriesNo)}.jpg`);
+        state.series.push(item);
+      })
+      .catch((err) => {
+        console.error(err);
+        showCameraMessage('Ein Foto konnte nicht verarbeitet werden: ' + err.message, 4000);
+      })
+      .finally(() => {
+        state.seriesPending--;
+        updateSeriesUi();
+      });
+    return;
+  }
+
+  el.shutter.disabled = true;
+  show(el.viewBusy);
+  try {
+    const item = await processFrame(frame, (t) => { el.busyText.textContent = t; });
     stopCamera(); // Akku sparen, solange das Ergebnis angezeigt wird
-    showResult(blob, makeFilename(prefix, takenAt, address, 'jpg'), kind);
+    showResults(item.kind, [item]);
   } catch (err) {
     console.error(err);
     alert('Fehler beim Erstellen des Fotos: ' + err.message);
     show(el.viewCamera);
     el.shutter.disabled = false;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Serie                                                               */
+/* ------------------------------------------------------------------ */
+
+function setSeriesMode(on) {
+  state.seriesMode = on;
+  try { localStorage.setItem(STORAGE.seriesMode, on ? '1' : '0'); } catch (e) { /* egal */ }
+  for (const b of el.shotMode.querySelectorAll('button')) {
+    b.classList.toggle('active', (b.dataset.mode === 'series') === on);
+  }
+  updateSeriesUi();
+}
+
+function updateSeriesUi() {
+  const inPhoto = state.mode === 'photo';
+  el.shotMode.classList.toggle('hidden', !inPhoto);
+  const count = state.series.length + state.seriesPending;
+  el.btnSeries.classList.toggle('hidden', !(inPhoto && count > 0));
+  el.seriesCount.textContent = String(count);
+  el.btnSeries.classList.toggle('busy', state.seriesPending > 0);
+  const last = state.series[state.series.length - 1];
+  if (last) el.seriesThumb.src = last.url;
+  else el.seriesThumb.removeAttribute('src');
+}
+
+async function finishSeries() {
+  if (!state.series.length && !state.seriesPending) return;
+  el.busyText.textContent = 'Fotos werden fertiggestellt …';
+  show(el.viewBusy);
+  await state.seriesQueue;
+  stopCamera();
+  if (!state.series.length) {
+    show(el.viewCamera);
+    startCamera();
+    return;
+  }
+  showResults('series', state.series);
+}
+
+function discardSeries() {
+  for (const it of state.series) URL.revokeObjectURL(it.url);
+  state.series = [];
+  state.seriesNo = 0;
+  state.seriesSaved = true;
+  updateSeriesUi();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1071,7 +1501,7 @@ async function onBeforePicked() {
     el.ghostThumb.src = url;
 
     if (isVisible(el.viewResult)) {
-      clearResult();
+      leaveResult();
       history.replaceState({ view: 'camera' }, '');
       enterCamera('compare');
     } else {
@@ -1101,12 +1531,6 @@ function updateGhostUi() {
   el.compareBanner.textContent = state.ghostOn
     ? 'Nachher-Foto · Vorher-Bild zum Ausrichten eingeblendet'
     : 'Nachher-Foto aufnehmen';
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
-  else ctx.rect(x, y, w, h);
 }
 
 function drawBadge(ctx, x, y, base, label, sub, accent) {
@@ -1213,10 +1637,12 @@ function pickVideoMimeType() {
 }
 
 /** Stempel-Daten für den aktuellen Moment eines Videos. */
-function liveStampInfo(now) {
+function liveStampInfo() {
   const pos = freshPosition();
+  const t = trustedTime();
   return {
-    timestamp: formatTimestamp(now),
+    timestamp: formatTimestamp(t.date),
+    timeVerified: t.verified,
     note: state.note,
     address: currentAddressText(pos),
     coords: pos ? formatCoords(pos) : null,
@@ -1234,6 +1660,7 @@ function setRecordingUi(on) {
   el.btnDetails.disabled = on;
   el.addrBtn.disabled = on;
   el.noteChip.disabled = on;
+  el.zoomBar.classList.toggle('locked', on);
 }
 
 async function startRecording() {
@@ -1243,6 +1670,7 @@ async function startRecording() {
     alert('Dieser Browser kann keine Videos aufnehmen. Bitte Chrome aktualisieren.');
     return;
   }
+  await ensureTimeSync();
 
   const w = video.videoWidth;
   const h = video.videoHeight;
@@ -1252,7 +1680,7 @@ async function startRecording() {
   const ctx = canvas.getContext('2d');
 
   const rec = {
-    startedAt: new Date(),
+    startedAt: trustedTime().date,
     address: currentAddressText(freshPosition()),
     stampCanvas: document.createElement('canvas'),
     stampKey: '',
@@ -1261,6 +1689,7 @@ async function startRecording() {
     timer: null,
     wakeLock: null,
     stopping: false,
+    perfStart: performance.now(),
   };
 
   // Bildschleife: Kamerabild + Stempel in das Canvas zeichnen
@@ -1279,8 +1708,8 @@ async function startRecording() {
       }
       ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh);
     }
-    const info = liveStampInfo(new Date());
-    const key = [info.timestamp, info.note, info.address, info.coords].join('|');
+    const info = liveStampInfo();
+    const key = [info.timestamp, info.timeVerified, info.note, info.address, info.coords].join('|');
     if (key !== rec.stampKey) {
       renderStamp(w, h, info, rec.stampCanvas);
       rec.stampKey = key;
@@ -1325,7 +1754,7 @@ async function startRecording() {
 
   setRecordingUi(true);
   const tick = () => {
-    const sec = (Date.now() - rec.startedAt.getTime()) / 1000;
+    const sec = (performance.now() - rec.perfStart) / 1000;
     el.recTime.textContent = `${formatDuration(sec)} / ${formatDuration(CONFIG.videoMaxSeconds)}`;
     if (sec >= CONFIG.videoMaxSeconds) stopRecording();
   };
@@ -1352,73 +1781,317 @@ function finishRecording(rec) {
   stopCamera();
   if (!rec.chunks.length) {
     alert('Das Video ist leer und konnte nicht gespeichert werden.');
-    showStart();
+    showStart(true);
     return;
   }
   const type = (rec.recorder && rec.recorder.mimeType) || rec.chunks[0].type || 'video/webm';
   const blob = new Blob(rec.chunks, { type: type.split(';')[0] });
   const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
-  showResult(blob, makeFilename('Video', rec.startedAt, rec.address, ext), 'video');
+  showResults('video', [{
+    kind: 'video',
+    blob,
+    url: URL.createObjectURL(blob),
+    filename: makeFilename('Video', rec.startedAt, rec.address, ext),
+    meta: { date: rec.startedAt, address: rec.address },
+  }]);
 }
 
 /* ------------------------------------------------------------------ */
-/* Ergebnis: anzeigen, herunterladen, teilen                           */
+/* Ergebnis: anzeigen, herunterladen, teilen, PDF, ZIP                 */
 /* ------------------------------------------------------------------ */
 
 const RESULT_TEXT = {
   photo: { title: 'Foto erstellt', again: 'Neues Foto' },
   video: { title: 'Video erstellt', again: 'Neues Video' },
   compare: { title: 'Vorher/Nachher erstellt', again: 'Neues Vorher/Nachher' },
+  series: { title: 'Serie', again: 'Weitere Fotos' },
 };
 
-function showResult(blob, filename, kind) {
-  clearResult();
-  const url = URL.createObjectURL(blob);
-  state.result = { blob, url, filename, kind };
-  const isVideo = kind === 'video';
-  el.resultImg.classList.toggle('hidden', isVideo);
-  el.resultVideo.classList.toggle('hidden', !isVideo);
-  if (isVideo) el.resultVideo.src = url;
-  else el.resultImg.src = url;
-  el.resultTitle.textContent = RESULT_TEXT[kind].title;
-  el.btnNew.textContent = RESULT_TEXT[kind].again;
-
-  const file = new File([blob], filename, { type: blob.type });
-  const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
-  el.btnShare.classList.toggle('hidden', !canShare);
-
+function showResults(kind, items) {
+  state.shown = { kind, items };
   history.replaceState({ view: 'result' }, '');
+  renderResults();
   show(el.viewResult);
 }
 
-function clearResult() {
-  if (state.result) URL.revokeObjectURL(state.result.url);
-  state.result = null;
+function renderResults() {
+  const { kind, items } = state.shown;
+  const isSeries = kind === 'series';
+  const single = items[0];
+
+  el.resultSingle.classList.toggle('hidden', isSeries);
+  el.resultGrid.classList.toggle('hidden', !isSeries);
+  el.resultImg.removeAttribute('src');
+  el.resultVideo.pause();
+  el.resultVideo.removeAttribute('src');
+
+  if (isSeries) {
+    el.resultTitle.textContent = items.length === 1 ? '1 Foto aufgenommen' : `${items.length} Fotos aufgenommen`;
+    el.resultGrid.innerHTML = '';
+    items.forEach((it, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'grid-cell';
+      const img = document.createElement('img');
+      img.src = it.url;
+      img.alt = `Foto ${i + 1}`;
+      const num = document.createElement('span');
+      num.className = 'grid-num';
+      num.textContent = String(i + 1);
+      const del = document.createElement('button');
+      del.className = 'grid-del';
+      del.setAttribute('aria-label', `Foto ${i + 1} entfernen`);
+      del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>';
+      del.addEventListener('click', () => removeSeriesItem(it));
+      cell.append(img, num, del);
+      el.resultGrid.appendChild(cell);
+    });
+  } else {
+    el.resultTitle.textContent = RESULT_TEXT[kind].title;
+    const isVideo = kind === 'video';
+    el.resultImg.classList.toggle('hidden', isVideo);
+    el.resultVideo.classList.toggle('hidden', !isVideo);
+    if (isVideo) el.resultVideo.src = single.url;
+    else el.resultImg.src = single.url;
+  }
+
+  el.btnNew.textContent = RESULT_TEXT[kind].again;
+  el.downloadLabel.textContent = items.length > 1 ? `Alle herunterladen (${items.length})` : 'Herunterladen';
+
+  const files = items.map((it) => new File([it.blob], it.filename, { type: it.blob.type }));
+  const canShare = !!(navigator.canShare && navigator.canShare({ files }));
+  el.btnShare.classList.toggle('hidden', !canShare);
+  el.btnPdf.classList.toggle('hidden', kind === 'video');
+  el.btnZip.classList.toggle('hidden', items.length < 2);
+  for (const b of [el.btnDownload, el.btnShare, el.btnPdf, el.btnZip]) b.disabled = items.length === 0;
+}
+
+function removeSeriesItem(item) {
+  const i = state.series.indexOf(item);
+  if (i < 0) return;
+  state.series.splice(i, 1);
+  URL.revokeObjectURL(item.url);
+  if (!state.series.length) {
+    // nichts mehr übrig: zurück zur Kamera
+    state.seriesSaved = true;
+    state.shown = null;
+    history.replaceState({ view: 'camera' }, '');
+    enterCamera('photo');
+    return;
+  }
+  renderResults();
+}
+
+/** Ergebnis verlassen: Einzelergebnisse freigeben (die Serie bleibt bis zur Startseite erhalten). */
+function leaveResult() {
+  const s = state.shown;
+  state.shown = null;
   el.resultImg.removeAttribute('src');
   el.resultVideo.pause();
   el.resultVideo.removeAttribute('src');
   el.resultVideo.load();
+  if (s && s.kind !== 'series') for (const it of s.items) URL.revokeObjectURL(it.url);
 }
 
-function downloadResult() {
-  if (!state.result) return;
+function markSaved() {
+  if (state.shown && state.shown.kind === 'series') state.seriesSaved = true;
+}
+
+function downloadBlob(url, filename) {
   const a = document.createElement('a');
-  a.href = state.result.url;
-  a.download = state.result.filename;
+  a.href = url;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
 }
 
-async function shareResult() {
-  if (!state.result) return;
-  const { blob, filename } = state.result;
-  const file = new File([blob], filename, { type: blob.type });
+async function downloadResults() {
+  if (!state.shown) return;
+  const items = state.shown.items;
+  for (let i = 0; i < items.length; i++) {
+    downloadBlob(items[i].url, items[i].filename);
+    if (i < items.length - 1) await sleep(400); // sonst blockiert der Browser mehrere Downloads
+  }
+  markSaved();
+}
+
+async function shareResults() {
+  if (!state.shown) return;
+  const files = state.shown.items.map((it) => new File([it.blob], it.filename, { type: it.blob.type }));
   try {
-    await navigator.share({ files: [file], title: filename });
+    await navigator.share({ files, title: files.length === 1 ? files[0].name : `${files.length} Fotos` });
+    markSaved();
   } catch (err) {
     if (err.name !== 'AbortError') alert('Teilen nicht möglich: ' + err.message);
   }
+}
+
+async function withButtonBusy(button, text, fn) {
+  const old = button.textContent;
+  button.disabled = true;
+  button.textContent = text;
+  try {
+    await fn();
+  } catch (err) {
+    console.error(err);
+    alert('Fehler: ' + err.message);
+  } finally {
+    button.textContent = old;
+    button.disabled = false;
+  }
+}
+
+async function zipResults() {
+  if (!state.shown) return;
+  await withButtonBusy(el.btnZip, 'ZIP …', async () => {
+    const items = state.shown.items;
+    const zip = await Zip.create(items.map((it) => ({ name: it.filename, blob: it.blob, date: it.meta.date })));
+    const first = items[0].meta;
+    const name = makeFilename('Fotos', first.date, first.address, 'zip');
+    const url = URL.createObjectURL(zip);
+    downloadBlob(url, name);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    markSaved();
+  });
+}
+
+/* ---------- PDF-Bericht ---------- */
+
+/** Bild verkleinert als JPEG-Bytes für das PDF. */
+async function jpegForPdf(source, maxSide, background) {
+  const bmp = source instanceof Blob ? await createImageBitmap(source) : source;
+  const sw = bmp.width || bmp.naturalWidth;
+  const sh = bmp.height || bmp.naturalHeight;
+  const s = Math.min(1, maxSide / Math.max(sw, sh));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(sw * s));
+  c.height = Math.max(1, Math.round(sh * s));
+  const ctx = c.getContext('2d');
+  if (background) {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, c.width, c.height);
+  }
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  if (bmp.close) bmp.close();
+  const blob = await canvasToBlob(c, 0.85);
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), width: c.width, height: c.height };
+}
+
+async function createReport(items) {
+  const doc = new Pdf.Document();
+  const M = 42;                      // Seitenrand
+  const CW = doc.width - M * 2;      // nutzbare Breite
+  const BOTTOM = doc.height - 50;
+  const TEXT = '#0F172A';
+  const MUTED = '#64748B';
+  const ACCENT = '#0284C7';
+  const now = trustedTime();
+
+  const photos = items.filter((it) => it.kind !== 'video');
+  const dates = photos.map((p) => p.meta.date).sort((a, b) => a - b);
+  const addresses = [...new Set(photos.map((p) => oneLine(p.meta.address)).filter(Boolean))];
+
+  // Kopf: Firmenlogo + Titel
+  doc.newPage();
+  let y = M;
+  if (companyLogoReady) {
+    const logo = await jpegForPdf(companyLogo, 600, '#ffffff');
+    const lh = 46;
+    const lw = Math.min(200, (logo.width / logo.height) * lh);
+    doc.image(doc.addJpeg(logo.bytes, logo.width, logo.height), M, y, lw, lw / (logo.width / logo.height));
+  }
+  const title = 'Fotobericht';
+  doc.text(title, doc.width - M - Pdf.textWidth(title, 22, true), y + 2, 22, { bold: true, color: TEXT });
+  const created = `Erstellt am ${formatShortDate(now.date)}${now.verified ? ' (Zeit geprüft)' : ''}`;
+  doc.text(created, doc.width - M - Pdf.textWidth(created, 9), y + 30, 9, { color: MUTED });
+  y += 62;
+  doc.rect(M, y, CW, 2, '#0EA5E9');
+  y += 16;
+
+  // Übersicht
+  const info = [];
+  if (addresses.length === 1) info.push(['Adresse', addresses[0]]);
+  else if (addresses.length > 1) info.push(['Adressen', addresses.join(' · ')]);
+  if (dates.length) {
+    const from = formatShortDate(dates[0]);
+    const to = formatShortDate(dates[dates.length - 1]);
+    info.push(['Zeitraum', from === to ? from : `${from} – ${to}`]);
+  }
+  info.push(['Anzahl Fotos', String(photos.length)]);
+  for (const [label, value] of info) {
+    doc.text(label, M, y, 10, { bold: true, color: MUTED });
+    for (const line of Pdf.wrap(value, 10, false, CW - 90)) {
+      doc.text(line, M + 90, y, 10, { color: TEXT });
+      y += 14;
+    }
+    y += 2;
+  }
+  y += 12;
+
+  // Fotos
+  for (let i = 0; i < photos.length; i++) {
+    const p = photos[i];
+    const img = await jpegForPdf(p.blob, CONFIG.pdfImageMaxSide);
+    const maxH = 300;
+    let iw = CW;
+    let ih = (img.height / img.width) * iw;
+    if (ih > maxH) {
+      ih = maxH;
+      iw = (img.width / img.height) * ih;
+    }
+
+    const caption = [];
+    const head = `Foto ${i + 1} von ${photos.length} · ${formatTimestamp(p.meta.date)}${p.meta.verified ? ' · Zeit geprüft' : ' · Zeit ungeprüft'}`;
+    caption.push([head, true, TEXT]);
+    if (p.meta.note) caption.push([p.meta.note, true, ACCENT]);
+    if (p.meta.address) caption.push([oneLine(p.meta.address), false, TEXT]);
+    caption.push([p.meta.coords || 'Kein Standort verfügbar', false, MUTED]);
+    if (p.kind === 'compare') {
+      caption.push([`Vorher/Nachher-Vergleich${p.meta.compareDate ? ' · Vorher aufgenommen ' + formatShortDate(p.meta.compareDate) : ''}`, false, MUTED]);
+    }
+    const lines = [];
+    for (const [text, bold, color] of caption) {
+      for (const l of Pdf.wrap(text, 9.5, bold, CW)) lines.push([l, bold, color]);
+    }
+    const blockH = ih + 8 + lines.length * 13 + 18;
+
+    if (y + blockH > BOTTOM) {
+      doc.newPage();
+      y = M;
+    }
+    doc.image(doc.addJpeg(img.bytes, img.width, img.height), M + (CW - iw) / 2, y, iw, ih);
+    y += ih + 8;
+    for (const [l, bold, color] of lines) {
+      doc.text(l, M, y, 9.5, { bold, color });
+      y += 13;
+    }
+    y += 6;
+    doc.line(M, y, M + CW, y, '#E2E8F0', 0.7);
+    y += 12;
+  }
+
+  // Fußzeile auf jeder Seite
+  doc.pages.forEach((page, i) => {
+    doc.page = page;
+    const footer = `Hier & Jetzt · Fotobericht · Seite ${i + 1} von ${doc.pages.length}`;
+    doc.text(footer, (doc.width - Pdf.textWidth(footer, 8)) / 2, doc.height - 30, 8, { color: MUTED });
+  });
+
+  return doc.toBlob();
+}
+
+async function pdfResults() {
+  if (!state.shown) return;
+  await withButtonBusy(el.btnPdf, 'PDF wird erstellt …', async () => {
+    const items = state.shown.items;
+    const pdf = await createReport(items);
+    const first = items[0].meta;
+    const name = makeFilename('Bericht', first.date, first.address, 'pdf');
+    const url = URL.createObjectURL(pdf);
+    downloadBlob(url, name);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    markSaved();
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1432,6 +2105,7 @@ function enterCamera(mode) {
   el.shutter.setAttribute('aria-label', mode === 'video' ? 'Aufnahme starten/stoppen' : 'Foto aufnehmen');
   showCameraMessage('');
   updateGhostUi();
+  updateSeriesUi();
   updateGpsUi();
   updateNoteUi();
   show(el.viewCamera);
@@ -1440,26 +2114,34 @@ function enterCamera(mode) {
 
 function openCamera(mode) {
   history.pushState({ view: 'camera' }, '');
+  state.lens = 'main';
   enterCamera(mode);
 }
 
 function newShot() {
-  const kind = state.result ? state.result.kind : state.mode;
+  const kind = state.shown ? state.shown.kind : state.mode;
   if (kind === 'compare') {
     pickBeforeImage(); // neues Vorher-Bild wählen, danach geht es weiter
     return;
   }
-  clearResult();
+  leaveResult();
   history.replaceState({ view: 'camera' }, '');
-  enterCamera(kind);
+  enterCamera(kind === 'series' ? 'photo' : kind);
 }
 
-function showStart() {
+/** Zur Startseite. Fragt nach, wenn eine Serie noch nicht gespeichert wurde. */
+function showStart(force) {
+  if (!force && state.series.length && !state.seriesSaved) {
+    const ok = confirm(`Die Serie (${state.series.length} Fotos) wurde noch nicht gespeichert oder geteilt. Trotzdem verwerfen?`);
+    if (!ok) return false;
+  }
   if (isSheetOpen()) hideSheet();
   stopCamera();
-  clearResult();
+  leaveResult();
   clearBefore();
+  discardSeries();
   show(el.viewStart);
+  return true;
 }
 
 // Zurück (Button oder Android-Zurück-Taste) führt immer zur Startseite
@@ -1479,7 +2161,10 @@ window.addEventListener('popstate', () => {
     stopRecording();
     return;
   }
-  showStart();
+  if (!showStart()) {
+    // Abgebrochen: auf der aktuellen Seite bleiben
+    history.pushState({ view: isVisible(el.viewResult) ? 'result' : 'camera' }, '');
+  }
 });
 
 function onShutter() {
@@ -1489,6 +2174,19 @@ function onShutter() {
   } else {
     takePhoto();
   }
+}
+
+/* Kamera-Infos zur Fehlersuche (Tippen auf die Versionsnummer) */
+function showCameraInfo() {
+  const lines = ['Kamera-Info'];
+  if (state.lenses) {
+    lines.push('Kameras:', ...state.lenses.labels.map((l) => '  ' + l));
+    lines.push('Weitwinkel erkannt: ' + (state.lenses.wide ? 'ja' : 'nein'));
+  } else {
+    lines.push('Noch keine Kamera geöffnet – bitte erst einmal „Foto“ öffnen.');
+  }
+  lines.push(`Zeit geprüft: ${timeVerified() ? 'ja' : 'nein'}, Handyuhr ${Math.round(timeSync.deviceDiff / 1000)} s`);
+  alert(lines.join('\n'));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1505,8 +2203,10 @@ function showStartError(msg) {
 window.addEventListener('error', (e) => showStartError(e.message));
 window.addEventListener('unhandledrejection', (e) => showStartError(String(e.reason && e.reason.message || e.reason)));
 
-// GPS läuft schon auf der Startseite, damit beim Auslösen sofort ein Standort da ist
+// GPS und Zeitabgleich laufen schon auf der Startseite
 startGps();
+syncTime();
+setInterval(() => { if (!document.hidden) syncTime(); }, CONFIG.timeSyncIntervalMs);
 
 function on(element, handler, event = 'click') {
   if (element) element.addEventListener(event, handler);
@@ -1516,6 +2216,7 @@ on(el.btnOpenPhoto, () => openCamera('photo'));
 on(el.btnOpenVideo, () => openCamera('video'));
 on(el.btnOpenCompare, pickBeforeImage);
 on(el.beforeInput, onBeforePicked, 'change');
+on(el.startVersion, showCameraInfo);
 on(el.btnBack, goBack);
 on(el.btnHome, goBack);
 on(el.shutter, onShutter);
@@ -1524,19 +2225,24 @@ on(el.btnDetails, openSheet);
 on(el.addrBtn, openSheet);
 on(el.noteChip, openSheet);
 on(el.btnGhost, () => { state.ghostOn = !state.ghostOn; updateGhostUi(); });
+on(el.btnSeries, finishSeries);
+on(el.shotMode, (e) => {
+  const b = e.target.closest('button');
+  if (b) setSeriesMode(b.dataset.mode === 'series');
+});
 on(el.sheetClose, closeSheet);
 on(el.sheetApply, applySheet);
 on(el.sheet, (e) => { if (e.target === el.sheet) closeSheet(); }); // Tippen neben das Fenster
-on(el.addrManual, () => {
-  sheet.selected = el.addrManual.value.trim() ? 'manual' : 'auto';
-  updateSheetSelection();
-}, 'input');
-on(el.addrManual, () => { if (el.addrManual.value.trim()) { sheet.selected = 'manual'; updateSheetSelection(); } }, 'focus');
 on(el.noteClear, () => { el.noteInput.value = ''; el.noteInput.focus(); });
-on(el.btnDownload, downloadResult);
-on(el.btnShare, shareResult);
+on(el.btnDownload, downloadResults);
+on(el.btnShare, shareResults);
+on(el.btnPdf, pdfResults);
+on(el.btnZip, zipResults);
 on(el.btnNew, newShot);
 history.replaceState({ view: 'start' }, '');
+
+try { setSeriesMode(localStorage.getItem(STORAGE.seriesMode) === '1'); } catch (e) { setSeriesMode(false); }
+updateTimeUi();
 
 // Kamera und GPS pausieren, wenn die App im Hintergrund ist.
 // Eine laufende Videoaufnahme wird dabei beendet und gespeichert.
@@ -1545,14 +2251,17 @@ document.addEventListener('visibilitychange', () => {
     if (state.rec) stopRecording();
     else stopCamera();
     stopGps();
+    timeSync.stale = true; // nach dem Ruhezustand neu abgleichen
   } else {
     startGps();
+    syncTime();
+    updateTimeUi();
     if (isVisible(el.viewCamera)) startCamera();
   }
 });
 
 // Anzeige regelmäßig aktualisieren (z. B. wenn die Position veraltet)
-setInterval(updateGpsUi, 5000);
+setInterval(() => { updateGpsUi(); updateTimeUi(); }, 5000);
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

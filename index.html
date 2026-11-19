@@ -7,7 +7,7 @@
   <title>Hier &amp; Jetzt</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <!-- Startseite -->
@@ -17,13 +17,13 @@
       <h1 class="start-title">Hier &amp; Jetzt</h1>
       <p class="start-sub">Fotos &amp; Videos mit Zeitstempel,<br>GPS und Adresse</p>
 
-      <button id="btn-open-photo" class="menu-btn menu-btn-primary">
+      <button id="btn-open-photo" class="menu-btn">
         <span class="menu-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
         </span>
         <span class="menu-text">
           <span class="menu-title">Foto</span>
-          <span class="menu-sub">Mit Stempel aufnehmen</span>
+          <span class="menu-sub">Einzeln oder als Serie</span>
         </span>
         <svg class="menu-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 5.3 7.9 6.7 13.2 12l-5.3 5.3 1.4 1.4L16 12z"/></svg>
       </button>
@@ -53,15 +53,24 @@
     </div>
 
     <div class="start-footer">
-      <div class="gps-card">
-        <span id="start-dot" class="gps-dot dot-wait"></span>
-        <div class="gps-text">
-          <div id="start-gps" class="gps-title">GPS wird gesucht …</div>
-          <div id="start-addr" class="gps-sub"></div>
+      <div class="status-card">
+        <div class="status-row">
+          <span id="start-dot" class="gps-dot dot-wait"></span>
+          <div class="gps-text">
+            <div id="start-gps" class="gps-title">GPS wird gesucht …</div>
+            <div id="start-addr" class="gps-sub"></div>
+          </div>
+        </div>
+        <div class="status-row">
+          <span id="time-dot" class="gps-dot dot-wait"></span>
+          <div class="gps-text">
+            <div id="time-title" class="gps-title">Uhrzeit wird geprüft …</div>
+            <div id="time-sub" class="gps-sub"></div>
+          </div>
         </div>
       </div>
       <div id="start-error" class="start-error hidden"></div>
-      <div class="start-version">Version 7</div>
+      <button id="start-version" class="start-version">Version 8</button>
     </div>
   </section>
 
@@ -70,6 +79,7 @@
     <video id="video" autoplay playsinline muted></video>
     <img id="ghost" class="ghost hidden" alt="">
     <div id="focus-ring" class="focus-ring hidden"></div>
+    <div id="flash" class="flash"></div>
 
     <div class="status">
       <button id="btn-back" class="glass-btn" aria-label="Zurück zur Startseite">
@@ -98,6 +108,10 @@
       <div id="compare-banner" class="pill hidden">Nachher-Foto aufnehmen</div>
       <div id="rec-info" class="rec-info hidden"><span class="rec-dot"></span><span id="rec-time">00:00 / 02:00</span></div>
       <div id="zoom-bar" class="zoom-bar hidden"></div>
+      <div id="shot-mode" class="segmented hidden">
+        <button data-mode="single" class="active">Einzeln</button>
+        <button data-mode="series">Serie</button>
+      </div>
       <div class="control-row">
         <div class="side">
           <button id="btn-details" class="glass-btn glass-lg" aria-label="Adresse und Notiz">
@@ -110,6 +124,11 @@
             <img id="ghost-thumb" alt="">
             <span class="ghost-label">Vorher</span>
           </button>
+          <button id="btn-series" class="series-btn hidden" aria-label="Serie abschließen">
+            <img id="series-thumb" alt="">
+            <span id="series-count" class="series-count">0</span>
+            <span class="series-done">Fertig</span>
+          </button>
         </div>
       </div>
     </div>
@@ -117,21 +136,20 @@
 
   <!-- Adresse & Notiz -->
   <div id="sheet" class="sheet-backdrop hidden">
-    <div class="sheet" role="dialog" aria-label="Adresse und Notiz">
-      <div class="sheet-handle"></div>
-      <div class="sheet-head">
-        <h2>Adresse &amp; Notiz</h2>
-        <button id="sheet-close" class="icon-btn" aria-label="Schließen">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>
-        </button>
+    <div id="sheet-panel" class="sheet" role="dialog" aria-label="Adresse und Notiz">
+      <div id="sheet-grab" class="sheet-grab">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+          <h2>Adresse &amp; Notiz</h2>
+          <button id="sheet-close" class="icon-btn" aria-label="Schließen">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>
+          </button>
+        </div>
       </div>
       <div class="sheet-body">
         <div class="sheet-label">Adresse</div>
         <div id="addr-list"></div>
         <div id="addr-status" class="addr-status"></div>
-        <div id="manual-row" class="manual-row">
-          <input id="addr-manual" class="input" type="text" autocomplete="off" placeholder="Andere Adresse eingeben …">
-        </div>
 
         <div class="sheet-label">Notiz</div>
         <div class="input-wrap">
@@ -162,23 +180,27 @@
       </span>
       <span id="result-title">Foto erstellt</span>
     </div>
-    <div class="result-image">
+    <div id="result-single" class="result-image">
       <img id="result-img" alt="Aufgenommenes Foto mit Stempel">
       <video id="result-video" class="hidden" controls playsinline></video>
     </div>
+    <div id="result-grid" class="result-grid hidden"></div>
     <div class="result-actions">
       <button id="btn-download" class="btn btn-primary">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v9.2l3.3-3.3 1.4 1.4L12 17l-5.7-5.7 1.4-1.4 3.3 3.3zM5 19h14v2H5z"/></svg>
-        Herunterladen
+        <span id="download-label">Herunterladen</span>
       </button>
       <button id="btn-share" class="btn hidden">Teilen</button>
+      <button id="btn-pdf" class="btn hidden">PDF-Bericht</button>
+      <button id="btn-zip" class="btn hidden">Als ZIP</button>
       <button id="btn-new" class="btn">Neues Foto</button>
       <button id="btn-home" class="btn">Startseite</button>
     </div>
   </section>
 
   <canvas id="canvas" class="hidden"></canvas>
-  <script src="exif.js?v=7"></script>
-  <script src="app.js?v=7"></script>
+  <script src="exif.js?v=8"></script>
+  <script src="export.js?v=8"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
