@@ -1554,3 +1554,51 @@ html, body { overscroll-behavior-y: none; } /* Chrome-eigenes Neuladen aus, wir 
 .editor-head { justify-content: center; padding: calc(env(safe-area-inset-top) + 12px) 8px 10px; }
 .editor-actions { display: flex; gap: 10px; margin-top: 14px; }
 .editor-actions .editor-text-btn { flex: 1; height: 50px; font-size: 16px; }
+
+/* ================================================================== */
+/* Version 18: Löschen-Werkzeug, Rückgängig neben den Farben           */
+/* ================================================================== */
+
+.editor-row2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+.editor-row2 .editor-colors { margin-top: 0; gap: 14px; }
+.editor-undo {
+  flex: none;
+  height: 44px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.editor-undo svg { width: 20px; height: 20px; fill: currentColor; }
+.editor-undo:disabled { opacity: .35; }
+.editor-tools button { font-size: 11px; }
+.editor-stage.erase #editor-canvas { cursor: crosshair; }
+.editor-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(239,68,68,.9);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+}

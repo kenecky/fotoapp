@@ -5,6 +5,8 @@
  *  - Werkzeug „Zoomen“ (Finger): mit zwei Fingern oder Doppeltippen vergrößern, mit einem Finger verschieben.
  *    Zwei Finger zoomen auch in allen anderen Werkzeugen.
  *  - Text: gedrückt halten = verschieben, kurz antippen = ändern/löschen.
+ *  - Werkzeug „Löschen“: Markierung antippen (oder darüberwischen) entfernt sie.
+ *  - Rückgängig nimmt jeden Schritt zurück (Zeichnen, Löschen, Verschieben, Text ändern).
  * Markierungen werden in Bildkoordinaten (0…1) gespeichert und zum Schluss in voller
  * Auflösung über das Foto gelegt. Der Stempel bleibt unverändert.
  */
@@ -111,7 +113,7 @@ const Editor = (() => {
     if (st.drawing) drawShape(ctx, st.drawing, bw, bh);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    $e('editor-undo').disabled = st.shapes.length === 0;
+    $e('editor-undo').disabled = st.undo.length === 0;
     const zoomBtn = $e('editor-zoom');
     zoomBtn.classList.toggle('hidden', z <= 1.02);
     zoomBtn.textContent = `${String(Math.round(z * 10) / 10).replace('.', ',')}× · Zurücksetzen`;
@@ -176,14 +178,14 @@ const Editor = (() => {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
-  /** Text unter dem Finger (oberster zuerst) */
-  function hitText(cx, cy) {
+  /** Text unter dem Finger (oberster zuerst); mit „only“ nur diesen einen Text prüfen */
+  function hitText(cx, cy, only) {
     const ctx = $e('editor-canvas').getContext('2d');
     const { bw, bh } = st.base;
     const v = st.view;
     for (let i = st.shapes.length - 1; i >= 0; i--) {
       const s = st.shapes[i];
-      if (s.type !== 'text') continue;
+      if (s.type !== 'text' || (only && s !== only)) continue;
       const r = textRect(ctx, s, bw, bh);
       const grow = 10; // etwas größere Trefferfläche
       const x = v.tx + r.x * v.z - grow;
@@ -191,6 +193,75 @@ const Editor = (() => {
       if (cx >= x && cx <= x + r.w * v.z + grow * 2 && cy >= y && cy <= y + r.h * v.z + grow * 2) return s;
     }
     return null;
+  }
+
+  /* ---------- Rückgängig ---------- */
+
+  /** Zwischenstand merken – vor jeder Änderung aufrufen. */
+  function remember() {
+    st.undo.push(JSON.parse(JSON.stringify(st.shapes)));
+    if (st.undo.length > 50) st.undo.shift();
+  }
+
+  function undo() {
+    if (!st || !st.undo.length) return;
+    st.shapes = st.undo.pop();
+    st.moving = null;
+    render();
+  }
+
+  /* ---------- Löschen ---------- */
+
+  function distToSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = dx * dx + dy * dy;
+    const t = len ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / len)) : 0;
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  }
+
+  /** Markierung unter dem Finger (oberste zuerst), Prüfung in Bildschirm-Koordinaten. */
+  function hitShape(cx, cy) {
+    const { bw, bh } = st.base;
+    const v = st.view;
+    const S = (p) => [v.tx + p[0] * bw * v.z, v.ty + p[1] * bh * v.z];
+    for (let i = st.shapes.length - 1; i >= 0; i--) {
+      const s = st.shapes[i];
+      const tol = 16 + (lineWidth(bw, bh, s) * v.z) / 2;
+      if (s.type === 'text') {
+        if (hitText(cx, cy, s)) return s;
+      } else if (s.type === 'arrow') {
+        const [x1, y1] = S(s.a);
+        const [x2, y2] = S(s.b);
+        if (distToSegment(cx, cy, x1, y1, x2, y2) <= tol) return s;
+      } else if (s.type === 'circle') {
+        const [x1, y1] = S(s.a);
+        const [x2, y2] = S(s.b);
+        const rx = Math.max(1, Math.abs(x2 - x1) / 2);
+        const ry = Math.max(1, Math.abs(y2 - y1) / 2);
+        const d = Math.hypot((cx - (x1 + x2) / 2) / rx, (cy - (y1 + y2) / 2) / ry);
+        if (d <= 1 || (d - 1) * Math.min(rx, ry) <= tol) return s; // innen oder am Rand
+      } else if (s.type === 'pen') {
+        const pts = s.pts.map(S);
+        for (let k = 1; k < pts.length; k++) {
+          if (distToSegment(cx, cy, pts[k - 1][0], pts[k - 1][1], pts[k][0], pts[k][1]) <= tol) return s;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Löscht die Markierung unter dem Finger; ein Zwischenstand pro Wischbewegung. */
+  function eraseAt(cx, cy, gesture) {
+    const s = hitShape(cx, cy);
+    if (!s) return;
+    if (!gesture.remembered) {
+      remember();
+      gesture.remembered = true;
+    }
+    st.shapes.splice(st.shapes.indexOf(s), 1);
+    if (navigator.vibrate) navigator.vibrate(10);
+    render();
   }
 
   /* ---------- Werkzeuge ---------- */
@@ -201,6 +272,8 @@ const Editor = (() => {
       b.classList.toggle('active', b.dataset.tool === tool);
     }
     $e('editor-stage').classList.toggle('hand', tool === 'hand');
+    $e('editor-stage').classList.toggle('erase', tool === 'erase');
+    $e('editor-hint').classList.toggle('hidden', tool !== 'erase');
   }
 
   function setColor(color) {
@@ -220,6 +293,7 @@ const Editor = (() => {
       icon: 'edit',
     });
     if (text && st) {
+      remember();
       st.shapes.push({ type: 'text', color: st.color, a: p, text: text.slice(0, 60), scale: 1 / st.view.z });
       render();
     }
@@ -236,6 +310,7 @@ const Editor = (() => {
       icon: 'edit',
     });
     if (text === null || !st) return;
+    remember();
     if (text) shape.text = text.slice(0, 60);
     else st.shapes.splice(st.shapes.indexOf(shape), 1);
     render();
@@ -245,7 +320,7 @@ const Editor = (() => {
 
   async function open(item, onSave) {
     const bitmap = await createImageBitmap(item.blob);
-    st = { item, bitmap, shapes: [], tool: 'arrow', color: '#EF4444', drawing: null, moving: null, onSave };
+    st = { item, bitmap, shapes: [], undo: [], tool: 'arrow', color: '#EF4444', drawing: null, moving: null, onSave };
     setTool('arrow');
     setColor('#EF4444');
     history.pushState({ view: 'editor' }, '');
@@ -350,6 +425,12 @@ const Editor = (() => {
       }
       if (pointers.size > 2) return;
 
+      if (st.tool === 'erase') {
+        gesture = { id: e.pointerId, x: pt.x, y: pt.y, t: Date.now(), hit: null, mode: 'erase', timer: null };
+        eraseAt(pt.x, pt.y, gesture);
+        return;
+      }
+
       const hit = hitText(pt.x, pt.y);
       gesture = { id: e.pointerId, x: pt.x, y: pt.y, t: Date.now(), hit, mode: null, timer: null };
       if (hit) {
@@ -357,6 +438,7 @@ const Editor = (() => {
         gesture.timer = setTimeout(() => {
           if (!gesture || gesture.mode || !st) return;
           gesture.mode = 'move';
+          remember();
           const p = toImage(gesture.x, gesture.y);
           gesture.off = [hit.a[0] - p[0], hit.a[1] - p[1]];
           st.moving = { shape: hit };
@@ -405,7 +487,9 @@ const Editor = (() => {
         }
       }
 
-      if (gesture.mode === 'draw' && st.drawing) {
+      if (gesture.mode === 'erase') {
+        eraseAt(pt.x, pt.y, gesture); // darüberwischen löscht ebenfalls
+      } else if (gesture.mode === 'draw' && st.drawing) {
         const p = toImage(pt.x, pt.y);
         st.drawing.b = p;
         if (st.drawing.type === 'pen') st.drawing.pts.push(p);
@@ -443,7 +527,10 @@ const Editor = (() => {
         const d = st.drawing;
         st.drawing = null;
         const size = Math.hypot(d.b[0] - d.a[0], d.b[1] - d.a[1]) * st.view.z;
-        if (d.type === 'pen' ? d.pts.length > 1 : size > 0.015) st.shapes.push(d);
+        if (d.type === 'pen' ? d.pts.length > 1 : size > 0.015) {
+          remember();
+          st.shapes.push(d);
+        }
         render();
       } else if (g.mode === 'move') {
         st.moving = null;
@@ -485,11 +572,7 @@ const Editor = (() => {
       const b = e.target.closest('[data-color]');
       if (b && st) setColor(b.dataset.color);
     });
-    $e('editor-undo').addEventListener('click', () => {
-      if (!st) return;
-      st.shapes.pop();
-      render();
-    });
+    $e('editor-undo').addEventListener('click', undo);
     $e('editor-zoom').addEventListener('click', () => { if (st) resetView(); });
     $e('editor-cancel').addEventListener('click', cancel);
     $e('editor-done').addEventListener('click', save);
