@@ -7,7 +7,7 @@
   <title>Hier &amp; Jetzt</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <!-- Startseite -->
@@ -17,7 +17,7 @@
       <h1 class="start-title">Hier &amp; Jetzt</h1>
       <p class="start-sub">Fotos &amp; Videos mit Zeitstempel,<br>GPS und Adresse</p>
 
-      <button id="btn-open-photo" class="menu-btn">
+      <button id="btn-open-photo" class="menu-btn menu-photo">
         <span class="menu-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
         </span>
@@ -28,7 +28,7 @@
         <svg class="menu-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 5.3 7.9 6.7 13.2 12l-5.3 5.3 1.4 1.4L16 12z"/></svg>
       </button>
 
-      <button id="btn-open-video" class="menu-btn">
+      <button id="btn-open-video" class="menu-btn menu-video">
         <span class="menu-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h11a2 2 0 0 1 2 2v2.5l4-3v11l-4-3V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>
         </span>
@@ -39,7 +39,7 @@
         <svg class="menu-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 5.3 7.9 6.7 13.2 12l-5.3 5.3 1.4 1.4L16 12z"/></svg>
       </button>
 
-      <button id="btn-open-compare" class="menu-btn">
+      <button id="btn-open-compare" class="menu-btn menu-compare">
         <span class="menu-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v16H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm9-2h2v20h-2zm4 2h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3v-2h2V6h-2z"/></svg>
         </span>
@@ -70,7 +70,7 @@
         </div>
       </div>
       <div id="start-error" class="start-error hidden"></div>
-      <button id="start-version" class="start-version">Version 8</button>
+      <button id="start-version" class="start-version">Version 9</button>
     </div>
   </section>
 
@@ -166,6 +166,21 @@
     </div>
   </div>
 
+  <!-- Bestätigungsfenster -->
+  <div id="dialog" class="dialog-backdrop hidden">
+    <div class="dialog" role="alertdialog" aria-labelledby="dialog-title" aria-describedby="dialog-text">
+      <div class="dialog-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 1 21h22L12 2zm1 15h-2v-2h2v2zm0-4h-2V9h2v4z"/></svg>
+      </div>
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-text"></p>
+      <div class="dialog-actions">
+        <button id="dialog-cancel" class="btn">Abbrechen</button>
+        <button id="dialog-ok" class="btn btn-primary">OK</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Verarbeitung -->
   <section id="view-busy" class="view hidden">
     <div class="spinner"></div>
@@ -199,8 +214,8 @@
   </section>
 
   <canvas id="canvas" class="hidden"></canvas>
-  <script src="exif.js?v=8"></script>
-  <script src="export.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="exif.js?v=9"></script>
+  <script src="export.js?v=9"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

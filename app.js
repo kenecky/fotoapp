@@ -35,7 +35,6 @@ const CONFIG = {
 const STORAGE = {
   addresses: 'hj.recentAddresses',
   notes: 'hj.recentNotes',
-  seriesMode: 'hj.seriesMode',
 };
 const FONT = 'system-ui, Roboto, "Segoe UI", Arial, sans-serif';
 
@@ -104,6 +103,11 @@ const el = {
   btnNew: $('btn-new'),
   btnHome: $('btn-home'),
   canvas: $('canvas'),
+  dialog: $('dialog'),
+  dialogTitle: $('dialog-title'),
+  dialogText: $('dialog-text'),
+  dialogOk: $('dialog-ok'),
+  dialogCancel: $('dialog-cancel'),
 };
 
 const state = {
@@ -1430,7 +1434,6 @@ async function takePhoto() {
 
 function setSeriesMode(on) {
   state.seriesMode = on;
-  try { localStorage.setItem(STORAGE.seriesMode, on ? '1' : '0'); } catch (e) { /* egal */ }
   for (const b of el.shotMode.querySelectorAll('button')) {
     b.classList.toggle('active', (b.dataset.mode === 'series') === on);
   }
@@ -1781,7 +1784,7 @@ function finishRecording(rec) {
   stopCamera();
   if (!rec.chunks.length) {
     alert('Das Video ist leer und konnte nicht gespeichert werden.');
-    showStart(true);
+    showStart();
     return;
   }
   const type = (rec.recorder && rec.recorder.mimeType) || rec.chunks[0].type || 'video/webm';
@@ -2129,19 +2132,54 @@ function newShot() {
   enterCamera(kind === 'series' ? 'photo' : kind);
 }
 
-/** Zur Startseite. Fragt nach, wenn eine Serie noch nicht gespeichert wurde. */
-function showStart(force) {
-  if (!force && state.series.length && !state.seriesSaved) {
-    const ok = confirm(`Die Serie (${state.series.length} Fotos) wurde noch nicht gespeichert oder geteilt. Trotzdem verwerfen?`);
-    if (!ok) return false;
-  }
+/* ---------- Bestätigungsfenster im Stil der App ---------- */
+
+let dialogResolve = null;
+const isDialogOpen = () => el.dialog.classList.contains('open'); // während der Schließ-Animation schon „zu“
+
+function confirmDialog({ title, text, ok = 'OK', cancel = 'Abbrechen', danger = false }) {
+  if (dialogResolve) dialogResolve(false);
+  el.dialogTitle.textContent = title;
+  el.dialogText.textContent = text;
+  el.dialogOk.textContent = ok;
+  el.dialogCancel.textContent = cancel;
+  el.dialogOk.classList.toggle('btn-danger', danger);
+  el.dialog.classList.remove('hidden');
+  requestAnimationFrame(() => el.dialog.classList.add('open'));
+  return new Promise((resolve) => { dialogResolve = resolve; });
+}
+
+function closeDialog(result) {
+  el.dialog.classList.remove('open');
+  setTimeout(() => { if (!el.dialog.classList.contains('open')) el.dialog.classList.add('hidden'); }, 180);
+  const r = dialogResolve;
+  dialogResolve = null;
+  if (r) r(result);
+}
+
+/** Wurde eine Serie noch nicht gespeichert oder geteilt? */
+const seriesUnsaved = () => state.series.length > 0 && !state.seriesSaved;
+
+/** Zur Startseite (eine nicht gespeicherte Serie wird vorher über askDiscardSeries abgefragt). */
+function showStart() {
+  if (isDialogOpen()) closeDialog(false);
   if (isSheetOpen()) hideSheet();
   stopCamera();
   leaveResult();
   clearBefore();
   discardSeries();
   show(el.viewStart);
-  return true;
+}
+
+async function askDiscardSeries() {
+  const n = state.series.length;
+  return confirmDialog({
+    title: 'Serie verwerfen?',
+    text: `${n === 1 ? 'Das Foto' : `Die ${n} Fotos`} der Serie ${n === 1 ? 'wurde' : 'wurden'} noch nicht gespeichert oder geteilt.`,
+    ok: 'Verwerfen',
+    cancel: 'Zurück',
+    danger: true,
+  });
 }
 
 // Zurück (Button oder Android-Zurück-Taste) führt immer zur Startseite
@@ -2161,10 +2199,23 @@ window.addEventListener('popstate', () => {
     stopRecording();
     return;
   }
-  if (!showStart()) {
-    // Abgebrochen: auf der aktuellen Seite bleiben
+  if (isDialogOpen()) {
+    // Zurück-Taste bei offenem Fenster = Abbrechen
     history.pushState({ view: isVisible(el.viewResult) ? 'result' : 'camera' }, '');
+    closeDialog(false);
+    return;
   }
+  if (seriesUnsaved() && !isVisible(el.viewStart)) {
+    // Erst nachfragen, solange auf der aktuellen Seite bleiben
+    history.pushState({ view: isVisible(el.viewResult) ? 'result' : 'camera' }, '');
+    askDiscardSeries().then((ok) => {
+      if (!ok) return;
+      discardSeries();
+      history.back(); // jetzt ohne Rückfrage zur Startseite
+    });
+    return;
+  }
+  showStart();
 });
 
 function onShutter() {
@@ -2212,7 +2263,10 @@ function on(element, handler, event = 'click') {
   if (element) element.addEventListener(event, handler);
   else showStartError('Seite unvollständig geladen – bitte App schließen und neu öffnen.');
 }
-on(el.btnOpenPhoto, () => openCamera('photo'));
+on(el.btnOpenPhoto, () => {
+  setSeriesMode(false); // von der Startseite immer mit „Einzeln“ beginnen
+  openCamera('photo');
+});
 on(el.btnOpenVideo, () => openCamera('video'));
 on(el.btnOpenCompare, pickBeforeImage);
 on(el.beforeInput, onBeforePicked, 'change');
@@ -2239,9 +2293,12 @@ on(el.btnShare, shareResults);
 on(el.btnPdf, pdfResults);
 on(el.btnZip, zipResults);
 on(el.btnNew, newShot);
+on(el.dialogOk, () => closeDialog(true));
+on(el.dialogCancel, () => closeDialog(false));
+on(el.dialog, (e) => { if (e.target === el.dialog) closeDialog(false); });
 history.replaceState({ view: 'start' }, '');
 
-try { setSeriesMode(localStorage.getItem(STORAGE.seriesMode) === '1'); } catch (e) { setSeriesMode(false); }
+setSeriesMode(false);
 updateTimeUi();
 
 // Kamera und GPS pausieren, wenn die App im Hintergrund ist.
