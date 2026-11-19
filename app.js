@@ -103,6 +103,11 @@ const el = {
   btnNew: $('btn-new'),
   btnHome: $('btn-home'),
   canvas: $('canvas'),
+  viewer: $('viewer'),
+  viewerImg: $('viewer-img'),
+  viewerClose: $('viewer-close'),
+  viewerHint: $('viewer-hint'),
+  zoomHint: $('zoom-hint'),
   dialog: $('dialog'),
   dialogTitle: $('dialog-title'),
   dialogText: $('dialog-text'),
@@ -922,30 +927,20 @@ function closeSheet() {
   else hideSheet();
 }
 
-/* Fenster nach unten wegwischen */
+/*
+ * Fenster nach unten wegwischen – überall im Fenster.
+ * In der Adressliste beginnt das Wischen erst, wenn die Liste ganz oben steht
+ * (sonst wird normal gescrollt).
+ */
 (function setupSheetDrag() {
   const panel = el.sheetPanel;
-  let startY = null;
-  let dy = 0;
-  let t0 = 0;
-  el.sheetGrab.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button')) return;
-    startY = e.clientY;
-    dy = 0;
-    t0 = Date.now();
-    panel.style.transition = 'none';
-    el.sheetGrab.setPointerCapture(e.pointerId);
-  });
-  el.sheetGrab.addEventListener('pointermove', (e) => {
-    if (startY == null) return;
-    dy = Math.max(0, e.clientY - startY);
-    panel.style.transform = `translateY(${dy}px)`;
-  });
-  const end = () => {
-    if (startY == null) return;
-    startY = null;
+  const body = panel.querySelector('.sheet-body');
+  let drag = null; // { x, y, t, active }
+
+  const move = (dy) => { panel.style.transform = `translateY(${Math.max(0, dy)}px)`; };
+  const finish = (dy, dt) => {
     panel.style.transition = '';
-    const fast = dy > 40 && Date.now() - t0 < 300;
+    const fast = dy > 40 && dt < 300;
     if (dy > 110 || fast) {
       panel.style.transform = 'translateY(100%)';
       closeSheet();
@@ -953,8 +948,220 @@ function closeSheet() {
       panel.style.transform = '';
     }
   };
-  el.sheetGrab.addEventListener('pointerup', end);
-  el.sheetGrab.addEventListener('pointercancel', end);
+
+  // Finger
+  panel.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { drag = null; return; }
+    const t = e.touches[0];
+    drag = { x: t.clientX, y: t.clientY, t: Date.now(), active: false };
+  }, { passive: true });
+
+  panel.addEventListener('touchmove', (e) => {
+    if (!drag) return;
+    const t = e.touches[0];
+    const dx = t.clientX - drag.x;
+    const dy = t.clientY - drag.y;
+    if (!drag.active) {
+      if (Math.abs(dy) < 8 || Math.abs(dx) > Math.abs(dy)) return;
+      const inBody = body.contains(e.target);
+      if (dy < 0 || (inBody && body.scrollTop > 0)) { drag = null; return; } // normal scrollen
+      drag.active = true;
+      drag.y = t.clientY; // ab hier mitziehen
+      drag.t = Date.now();
+      panel.style.transition = 'none';
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    }
+    e.preventDefault();
+    move(t.clientY - drag.y);
+  }, { passive: false });
+
+  const touchEnd = (e) => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (!d.active) return;
+    const t = e.changedTouches[0];
+    finish(t.clientY - d.y, Date.now() - d.t);
+  };
+  panel.addEventListener('touchend', touchEnd);
+  panel.addEventListener('touchcancel', touchEnd);
+
+  // Maus (am Computer): am Kopfbereich ziehen
+  let mouse = null;
+  el.sheetGrab.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' || e.target.closest('button')) return;
+    mouse = { y: e.clientY, t: Date.now() };
+    panel.style.transition = 'none';
+    el.sheetGrab.setPointerCapture(e.pointerId);
+  });
+  el.sheetGrab.addEventListener('pointermove', (e) => { if (mouse) move(e.clientY - mouse.y); });
+  const mouseEnd = (e) => {
+    if (!mouse) return;
+    const m = mouse;
+    mouse = null;
+    finish(Math.max(0, e.clientY - m.y), Date.now() - m.t);
+  };
+  el.sheetGrab.addEventListener('pointerup', mouseEnd);
+  el.sheetGrab.addEventListener('pointercancel', mouseEnd);
+})();
+
+/* ------------------------------------------------------------------ */
+/* Großansicht mit Zoom                                                */
+/* ------------------------------------------------------------------ */
+
+const viewer = { s: 1, x: 0, y: 0, base: null };
+const isViewerOpen = () => !el.viewer.classList.contains('hidden');
+
+function openViewer(url) {
+  history.pushState({ view: 'viewer' }, '');
+  el.viewerImg.onload = () => { viewerLayout(); };
+  el.viewerImg.src = url;
+  el.viewer.classList.remove('hidden');
+  el.viewerHint.classList.remove('fade');
+  void el.viewerHint.offsetWidth;
+  el.viewerHint.classList.add('fade');
+  if (el.viewerImg.complete && el.viewerImg.naturalWidth) viewerLayout();
+}
+
+function hideViewer() {
+  el.viewer.classList.add('hidden');
+  el.viewerImg.removeAttribute('src');
+}
+
+function closeViewer() {
+  if (history.state && history.state.view === 'viewer') history.back(); // popstate schließt
+  else hideViewer();
+}
+
+/** Bild einpassen (Zoom 1). */
+function viewerLayout() {
+  const img = el.viewerImg;
+  const vw = el.viewer.clientWidth;
+  const vh = el.viewer.clientHeight;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  if (!iw || !ih) return;
+  const s0 = Math.min(vw / iw, vh / ih);
+  viewer.base = { w: iw * s0, h: ih * s0, vw, vh };
+  img.style.width = viewer.base.w + 'px';
+  img.style.height = viewer.base.h + 'px';
+  viewer.s = 1;
+  viewer.x = (vw - viewer.base.w) / 2;
+  viewer.y = (vh - viewer.base.h) / 2;
+  viewerApply(false);
+}
+
+function viewerClamp() {
+  const b = viewer.base;
+  const w = b.w * viewer.s;
+  const h = b.h * viewer.s;
+  viewer.x = w <= b.vw ? (b.vw - w) / 2 : Math.min(0, Math.max(b.vw - w, viewer.x));
+  viewer.y = h <= b.vh ? (b.vh - h) / 2 : Math.min(0, Math.max(b.vh - h, viewer.y));
+}
+
+function viewerApply(animate) {
+  if (!viewer.base) return;
+  viewerClamp();
+  el.viewerImg.style.transition = animate ? 'transform .2s ease' : 'none';
+  el.viewerImg.style.transform = `translate(${viewer.x}px, ${viewer.y}px) scale(${viewer.s})`;
+}
+
+/** Zoomen um einen Punkt (px, py) im Fenster. */
+function viewerZoomAt(px, py, newScale, animate) {
+  const s = Math.min(6, Math.max(1, newScale));
+  viewer.x = px - (px - viewer.x) * (s / viewer.s);
+  viewer.y = py - (py - viewer.y) * (s / viewer.s);
+  viewer.s = s;
+  viewerApply(animate);
+}
+
+(function setupViewerGestures() {
+  const area = el.viewer;
+  const pointers = new Map();
+  let pinch = null;
+  let pan = null;
+  let lastTap = null;
+  const rel = (e) => {
+    const r = area.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+
+  area.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    area.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, rel(e));
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = {
+        d: Math.hypot(a.x - b.x, a.y - b.y),
+        mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        s: viewer.s, x: viewer.x, y: viewer.y,
+      };
+      pan = null;
+    } else if (pointers.size === 1) {
+      const p = rel(e);
+      pan = { start: p, x: viewer.x, y: viewer.y, t: Date.now(), moved: false };
+    }
+  });
+
+  area.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, rel(e));
+    if (pinch && pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const s = Math.min(6, Math.max(1, pinch.s * (d / pinch.d)));
+      viewer.s = s;
+      viewer.x = mid.x - (pinch.mid.x - pinch.x) * (s / pinch.s);
+      viewer.y = mid.y - (pinch.mid.y - pinch.y) * (s / pinch.s);
+      viewerApply(false);
+    } else if (pan && pointers.size === 1) {
+      const p = rel(e);
+      const dx = p.x - pan.start.x;
+      const dy = p.y - pan.start.y;
+      if (Math.hypot(dx, dy) > 8) pan.moved = true;
+      if (viewer.s > 1) {
+        viewer.x = pan.x + dx;
+        viewer.y = pan.y + dy;
+        viewerApply(false);
+      }
+    }
+  });
+
+  const end = (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const p = rel(e);
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (pan && pointers.size === 0 && e.type === 'pointerup' && !pan.moved && Date.now() - pan.t < 300) {
+      // Doppeltippen: vergrößern bzw. zurück
+      const now = Date.now();
+      if (lastTap && now - lastTap.t < 320 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
+        if (viewer.s > 1.05) viewerLayout(), viewerApply(true);
+        else viewerZoomAt(p.x, p.y, 2.5, true);
+        lastTap = null;
+      } else {
+        lastTap = { t: now, x: p.x, y: p.y };
+      }
+    }
+    if (pointers.size === 0) pan = null;
+    else if (pointers.size === 1) {
+      const [only] = [...pointers.values()];
+      pan = { start: only, x: viewer.x, y: viewer.y, t: Date.now(), moved: true };
+    }
+  };
+  area.addEventListener('pointerup', end);
+  area.addEventListener('pointercancel', end);
+
+  // Mausrad am Computer
+  area.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const p = rel(e);
+    viewerZoomAt(p.x, p.y, viewer.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15), false);
+  }, { passive: false });
+
+  window.addEventListener('resize', () => { if (isViewerOpen()) viewerLayout(); });
 })();
 
 async function loadNearby() {
@@ -1823,6 +2030,7 @@ function renderResults() {
   const single = items[0];
 
   el.resultSingle.classList.toggle('hidden', isSeries);
+  el.zoomHint.classList.toggle('hidden', isSeries);
   el.resultGrid.classList.toggle('hidden', !isSeries);
   el.resultImg.removeAttribute('src');
   el.resultVideo.pause();
@@ -1845,6 +2053,7 @@ function renderResults() {
       del.setAttribute('aria-label', `Foto ${i + 1} entfernen`);
       del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>';
       del.addEventListener('click', () => removeSeriesItem(it));
+      img.addEventListener('click', () => openViewer(it.url));
       cell.append(img, num, del);
       el.resultGrid.appendChild(cell);
     });
@@ -1855,6 +2064,7 @@ function renderResults() {
     el.resultVideo.classList.toggle('hidden', !isVideo);
     if (isVideo) el.resultVideo.src = single.url;
     else el.resultImg.src = single.url;
+    el.zoomHint.classList.toggle('hidden', isVideo);
   }
 
   el.btnNew.textContent = RESULT_TEXT[kind].again;
@@ -2162,6 +2372,7 @@ const seriesUnsaved = () => state.series.length > 0 && !state.seriesSaved;
 
 /** Zur Startseite (eine nicht gespeicherte Serie wird vorher über askDiscardSeries abgefragt). */
 function showStart() {
+  if (isViewerOpen()) hideViewer();
   if (isDialogOpen()) closeDialog(false);
   if (isSheetOpen()) hideSheet();
   stopCamera();
@@ -2189,6 +2400,10 @@ function goBack() {
 }
 
 window.addEventListener('popstate', () => {
+  if (isViewerOpen()) {
+    hideViewer();
+    return;
+  }
   if (isSheetOpen()) {
     hideSheet();
     return;
@@ -2293,6 +2508,9 @@ on(el.btnShare, shareResults);
 on(el.btnPdf, pdfResults);
 on(el.btnZip, zipResults);
 on(el.btnNew, newShot);
+on(el.resultImg, () => { if (state.shown) openViewer(state.shown.items[0].url); });
+on(el.zoomHint, () => { if (state.shown) openViewer(state.shown.items[0].url); });
+on(el.viewerClose, closeViewer);
 on(el.dialogOk, () => closeDialog(true));
 on(el.dialogCancel, () => closeDialog(false));
 on(el.dialog, (e) => { if (e.target === el.dialog) closeDialog(false); });

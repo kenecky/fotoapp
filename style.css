@@ -1124,3 +1124,78 @@ html, body { overscroll-behavior-y: none; } /* Chrome-eigenes Neuladen aus, wir 
 /* Beim Ziehen keinen Text markieren und das Logo nicht „anfassen“ */
 #view-start { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .start-logo { -webkit-user-drag: none; pointer-events: none; }
+
+/* ================================================================== */
+/* Version 11: Großansicht mit Zoom                                    */
+/* ================================================================== */
+
+.result-image { position: relative; }
+#result-img { cursor: zoom-in; }
+.grid-cell img { cursor: zoom-in; }
+
+.zoom-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px 7px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15,23,42,.72);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.zoom-hint svg { width: 18px; height: 18px; fill: #fff; }
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #000;
+  overflow: hidden;
+  touch-action: none;
+}
+.viewer img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.viewer-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 14px);
+  right: 14px;
+  z-index: 2;
+  width: 48px;
+  height: 48px;
+  background: rgba(0,0,0,.5);
+}
+.viewer-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 24px);
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+}
+.viewer-hint.fade { animation: hint 3s ease forwards; }
+@keyframes hint { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+
+.sheet { touch-action: pan-y; }

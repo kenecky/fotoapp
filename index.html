@@ -7,7 +7,7 @@
   <title>Hier &amp; Jetzt</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <!-- Startseite -->
@@ -76,7 +76,7 @@
         </div>
       </div>
       <div id="start-error" class="start-error hidden"></div>
-      <button id="start-version" class="start-version">Version 10</button>
+      <button id="start-version" class="start-version">Version 11</button>
     </div>
   </section>
 
@@ -172,6 +172,15 @@
     </div>
   </div>
 
+  <!-- Großansicht -->
+  <div id="viewer" class="viewer hidden">
+    <img id="viewer-img" alt="Foto in Großansicht">
+    <button id="viewer-close" class="glass-btn viewer-close" aria-label="Schließen">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>
+    </button>
+    <div id="viewer-hint" class="viewer-hint">Zoomen: zwei Finger oder doppelt tippen</div>
+  </div>
+
   <!-- Bestätigungsfenster -->
   <div id="dialog" class="dialog-backdrop hidden">
     <div class="dialog" role="alertdialog" aria-labelledby="dialog-title" aria-describedby="dialog-text">
@@ -204,6 +213,10 @@
     <div id="result-single" class="result-image">
       <img id="result-img" alt="Aufgenommenes Foto mit Stempel">
       <video id="result-video" class="hidden" controls playsinline></video>
+      <button id="zoom-hint" class="zoom-hint">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16a6.47 6.47 0 0 0 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.49 4.49 0 0 1 9.5 14zM12 10h-2v2H9v-2H7V9h2V7h1v2h2v1z"/></svg>
+        Tippen zum Vergrößern
+      </button>
     </div>
     <div id="result-grid" class="result-grid hidden"></div>
     <div class="result-actions">
@@ -220,8 +233,8 @@
   </section>
 
   <canvas id="canvas" class="hidden"></canvas>
-  <script src="exif.js?v=10"></script>
-  <script src="export.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="exif.js?v=11"></script>
+  <script src="export.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
