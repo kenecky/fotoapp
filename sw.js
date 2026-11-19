@@ -1,6 +1,6 @@
 // Service Worker: hält die App-Dateien offline vor.
 // Bei jeder Änderung an den App-Dateien die Versionsnummer erhöhen.
-const CACHE = 'fotoapp-v4';
+const CACHE = 'fotoapp-v5';
 const FILES = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const FILES = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/logo.svg',
 ];
 
 self.addEventListener('install', (event) => {

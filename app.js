@@ -28,7 +28,9 @@ const el = {
   btnOpenPhoto: $('btn-open-photo'),
   btnOpenVideo: $('btn-open-video'),
   startGps: $('start-gps'),
+  startDot: $('start-dot'),
   startAddr: $('start-addr'),
+  resultTitle: $('result-title'),
   btnBack: $('btn-back'),
   video: $('video'),
   gpsChip: $('gps-chip'),
@@ -65,10 +67,14 @@ const state = {
 /* Ansichten                                                           */
 /* ------------------------------------------------------------------ */
 
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+
 function show(view) {
   for (const v of [el.viewStart, el.viewCamera, el.viewBusy, el.viewResult]) {
     v.classList.toggle('hidden', v !== view);
   }
+  // Statusleiste des Handys passend färben: Kamera dunkel, sonst hell
+  if (themeColorMeta) themeColorMeta.content = view === el.viewCamera ? '#000000' : '#F4F7FA';
 }
 
 function isVisible(view) {
@@ -189,24 +195,27 @@ function freshPosition() {
 
 function updateGpsUi() {
   const p = freshPosition();
-  let text, cls;
+  let text, startText, level;
   if (p) {
     const acc = Math.round(p.coords.accuracy);
     text = `GPS ±${acc} m`;
-    cls = acc <= 20 ? 'chip-good' : acc <= 100 ? 'chip-medium' : 'chip-bad';
+    level = acc <= 20 ? 'good' : acc <= 100 ? 'medium' : 'bad';
+    startText = (level === 'bad' ? 'GPS ungenau' : 'GPS bereit') + ` · ±${acc} m`;
   } else if (state.gpsError) {
-    text = state.gpsError;
-    cls = 'chip-bad';
+    text = startText = state.gpsError;
+    level = 'bad';
   } else {
-    text = 'GPS wird gesucht …';
-    cls = 'chip-wait';
+    text = startText = 'GPS wird gesucht …';
+    level = 'wait';
   }
-  const addr = state.address ? state.address.text.replace('\n', ', ') : '';
-  for (const chip of [el.gpsChip, el.startGps]) {
-    chip.textContent = text;
-    chip.className = 'chip ' + cls;
-  }
+  let addr = state.address ? state.address.text.replace('\n', ', ') : '';
+  el.gpsChip.textContent = text;
+  el.gpsChip.className = 'chip chip-' + level;
   el.addrLine.textContent = addr;
+
+  if (!addr && level === 'bad' && !p) addr = 'Fotos sind trotzdem möglich – ohne Standort im Stempel.';
+  el.startGps.textContent = startText;
+  el.startDot.className = 'gps-dot dot-' + level;
   el.startAddr.textContent = addr;
 }
 
@@ -637,6 +646,7 @@ function showResult(blob, filename, kind) {
   if (kind === 'photo') el.resultImg.src = url;
   else el.resultVideo.src = url;
   el.btnNew.textContent = kind === 'photo' ? 'Neues Foto' : 'Neues Video';
+  el.resultTitle.textContent = kind === 'photo' ? 'Foto erstellt' : 'Video erstellt';
 
   const file = new File([blob], filename, { type: blob.type });
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
