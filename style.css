@@ -1199,3 +1199,40 @@ html, body { overscroll-behavior-y: none; } /* Chrome-eigenes Neuladen aus, wir 
 @keyframes hint { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 
 .sheet { touch-action: pan-y; }
+
+/* ================================================================== */
+/* Version 12: Galerie in der Großansicht                              */
+/* ================================================================== */
+
+.viewer { background-color: #000; }
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 48px;
+  height: 48px;
+  margin-top: -24px;
+  background: rgba(0,0,0,.45);
+}
+.viewer-prev { left: 10px; }
+.viewer-next { right: 10px; }
+.viewer-nav:disabled { opacity: .25; }
+.viewer-count {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top) + 24px);
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.5);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* Beim Herunterwischen Bedienelemente ausblenden */
+.viewer.dragging .viewer-nav,
+.viewer.dragging .viewer-close,
+.viewer.dragging .viewer-count,
+.viewer.dragging .viewer-hint { opacity: 0; transition: opacity .15s; }

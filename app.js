@@ -107,6 +107,9 @@ const el = {
   viewerImg: $('viewer-img'),
   viewerClose: $('viewer-close'),
   viewerHint: $('viewer-hint'),
+  viewerPrev: $('viewer-prev'),
+  viewerNext: $('viewer-next'),
+  viewerCount: $('viewer-count'),
   zoomHint: $('zoom-hint'),
   dialog: $('dialog'),
   dialogTitle: $('dialog-title'),
@@ -1009,23 +1012,59 @@ function closeSheet() {
 /* Großansicht mit Zoom                                                */
 /* ------------------------------------------------------------------ */
 
-const viewer = { s: 1, x: 0, y: 0, base: null };
+const viewer = { s: 1, x: 0, y: 0, dx: 0, dy: 0, base: null, urls: [], index: 0 };
 const isViewerOpen = () => !el.viewer.classList.contains('hidden');
 
-function openViewer(url) {
+/** Großansicht öffnen; bei mehreren Bildern mit Blättern (Galerie). */
+function openViewer(urls, index = 0) {
   history.pushState({ view: 'viewer' }, '');
-  el.viewerImg.onload = () => { viewerLayout(); };
-  el.viewerImg.src = url;
+  viewer.urls = urls;
   el.viewer.classList.remove('hidden');
+  el.viewer.style.background = '';
+  el.viewerHint.textContent = urls.length > 1
+    ? 'Wischen zum Blättern · nach unten zum Schließen'
+    : 'Zoomen: zwei Finger oder doppelt tippen';
   el.viewerHint.classList.remove('fade');
   void el.viewerHint.offsetWidth;
   el.viewerHint.classList.add('fade');
-  if (el.viewerImg.complete && el.viewerImg.naturalWidth) viewerLayout();
+  showViewerImage(index, 0);
+}
+
+/** Bild Nummer index anzeigen; from = -1/1 lässt es von links/rechts hereingleiten. */
+function showViewerImage(index, from) {
+  viewer.index = index;
+  const multi = viewer.urls.length > 1;
+  el.viewerPrev.classList.toggle('hidden', !multi);
+  el.viewerNext.classList.toggle('hidden', !multi);
+  el.viewerCount.classList.toggle('hidden', !multi);
+  el.viewerPrev.disabled = index <= 0;
+  el.viewerNext.disabled = index >= viewer.urls.length - 1;
+  el.viewerCount.textContent = `${index + 1} / ${viewer.urls.length}`;
+
+  const img = el.viewerImg;
+  img.onload = () => {
+    viewerLayout();
+    if (from) {
+      viewer.dx = from * viewer.base.vw;
+      viewerApply(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => { viewer.dx = 0; viewerApply(true); }));
+    }
+  };
+  img.src = viewer.urls[index];
+}
+
+function viewerStep(dir) {
+  const i = viewer.index + dir;
+  if (i < 0 || i >= viewer.urls.length) return false;
+  showViewerImage(i, dir);
+  return true;
 }
 
 function hideViewer() {
   el.viewer.classList.add('hidden');
   el.viewerImg.removeAttribute('src');
+  el.viewerImg.onload = null;
+  viewer.urls = [];
 }
 
 function closeViewer() {
@@ -1046,6 +1085,8 @@ function viewerLayout() {
   img.style.width = viewer.base.w + 'px';
   img.style.height = viewer.base.h + 'px';
   viewer.s = 1;
+  viewer.dx = 0;
+  viewer.dy = 0;
   viewer.x = (vw - viewer.base.w) / 2;
   viewer.y = (vh - viewer.base.h) / 2;
   viewerApply(false);
@@ -1062,8 +1103,14 @@ function viewerClamp() {
 function viewerApply(animate) {
   if (!viewer.base) return;
   viewerClamp();
-  el.viewerImg.style.transition = animate ? 'transform .2s ease' : 'none';
-  el.viewerImg.style.transform = `translate(${viewer.x}px, ${viewer.y}px) scale(${viewer.s})`;
+  // dx/dy: Verschiebung beim Blättern bzw. Herunterwischen (außerhalb der Begrenzung)
+  el.viewerImg.style.transition = animate ? 'transform .22s ease' : 'none';
+  el.viewerImg.style.transform =
+    `translate(${viewer.x + viewer.dx}px, ${viewer.y + viewer.dy}px) scale(${viewer.s})`;
+  const fade = Math.min(1, Math.max(0, viewer.dy) / 400);
+  el.viewer.style.transition = animate ? 'background-color .22s ease' : 'none';
+  el.viewer.style.backgroundColor = `rgba(0, 0, 0, ${1 - fade * 0.8})`;
+  el.viewer.classList.toggle('dragging', viewer.dy > 0);
 }
 
 /** Zoomen um einen Punkt (px, py) im Fenster. */
@@ -1079,7 +1126,7 @@ function viewerZoomAt(px, py, newScale, animate) {
   const area = el.viewer;
   const pointers = new Map();
   let pinch = null;
-  let pan = null;
+  let pan = null;    // { start, x, y, t, moved, mode: null | 'pan' | 'swipe' | 'down' }
   let lastTap = null;
   const rel = (e) => {
     const r = area.getBoundingClientRect();
@@ -1092,6 +1139,8 @@ function viewerZoomAt(px, py, newScale, animate) {
     pointers.set(e.pointerId, rel(e));
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
+      viewer.dx = 0;
+      viewer.dy = 0;
       pinch = {
         d: Math.hypot(a.x - b.x, a.y - b.y),
         mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
@@ -1100,7 +1149,7 @@ function viewerZoomAt(px, py, newScale, animate) {
       pan = null;
     } else if (pointers.size === 1) {
       const p = rel(e);
-      pan = { start: p, x: viewer.x, y: viewer.y, t: Date.now(), moved: false };
+      pan = { start: p, x: viewer.x, y: viewer.y, t: Date.now(), moved: false, mode: null };
     }
   });
 
@@ -1120,12 +1169,23 @@ function viewerZoomAt(px, py, newScale, animate) {
       const p = rel(e);
       const dx = p.x - pan.start.x;
       const dy = p.y - pan.start.y;
-      if (Math.hypot(dx, dy) > 8) pan.moved = true;
-      if (viewer.s > 1) {
+      if (!pan.moved && Math.hypot(dx, dy) > 10) {
+        pan.moved = true;
+        if (viewer.s > 1.02) pan.mode = 'pan';                       // gezoomt: Bild verschieben
+        else if (Math.abs(dx) > Math.abs(dy)) pan.mode = viewer.urls.length > 1 ? 'swipe' : null;
+        else pan.mode = dy > 0 ? 'down' : null;                      // nach unten: schließen
+      }
+      if (pan.mode === 'pan') {
         viewer.x = pan.x + dx;
         viewer.y = pan.y + dy;
-        viewerApply(false);
+      } else if (pan.mode === 'swipe') {
+        const atEnd = (dx > 0 && viewer.index === 0) || (dx < 0 && viewer.index === viewer.urls.length - 1);
+        viewer.dx = atEnd ? dx * 0.3 : dx; // am Anfang/Ende nur leicht nachgeben
+      } else if (pan.mode === 'down') {
+        viewer.dy = Math.max(0, dy);
+        viewer.dx = dx * 0.3;
       }
+      if (pan.mode) viewerApply(false);
     }
   });
 
@@ -1134,32 +1194,68 @@ function viewerZoomAt(px, py, newScale, animate) {
     const p = rel(e);
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
-    if (pan && pointers.size === 0 && e.type === 'pointerup' && !pan.moved && Date.now() - pan.t < 300) {
-      // Doppeltippen: vergrößern bzw. zurück
-      const now = Date.now();
-      if (lastTap && now - lastTap.t < 320 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
-        if (viewer.s > 1.05) viewerLayout(), viewerApply(true);
-        else viewerZoomAt(p.x, p.y, 2.5, true);
-        lastTap = null;
-      } else {
-        lastTap = { t: now, x: p.x, y: p.y };
+
+    if (pan && pointers.size === 0) {
+      const dt = Date.now() - pan.t;
+      const dx = p.x - pan.start.x;
+      const dy = p.y - pan.start.y;
+      if (pan.mode === 'swipe') {
+        const dir = dx < 0 ? 1 : -1;
+        const far = Math.abs(dx) > Math.min(90, viewer.base.vw * 0.22) || (Math.abs(dx) > 30 && dt < 250);
+        if (far && viewer.index + dir >= 0 && viewer.index + dir < viewer.urls.length) {
+          viewer.dx = -dir * viewer.base.vw; // altes Bild hinausschieben
+          viewerApply(true);
+          setTimeout(() => viewerStep(dir), 180);
+        } else {
+          viewer.dx = 0;
+          viewerApply(true);
+        }
+      } else if (pan.mode === 'down') {
+        if (dy > 120 || (dy > 40 && dt < 250)) {
+          viewer.dy = viewer.base.vh;
+          viewerApply(true);
+          setTimeout(closeViewer, 180);
+        } else {
+          viewer.dx = 0;
+          viewer.dy = 0;
+          viewerApply(true);
+        }
+      } else if (!pan.moved && e.type === 'pointerup' && dt < 300) {
+        // Doppeltippen: vergrößern bzw. zurück
+        const now = Date.now();
+        if (lastTap && now - lastTap.t < 320 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
+          if (viewer.s > 1.05) {
+            viewer.s = 1;
+            viewerApply(true);
+          } else {
+            viewerZoomAt(p.x, p.y, 2.5, true);
+          }
+          lastTap = null;
+        } else {
+          lastTap = { t: now, x: p.x, y: p.y };
+        }
       }
-    }
-    if (pointers.size === 0) pan = null;
-    else if (pointers.size === 1) {
+      pan = null;
+    } else if (pointers.size === 1) {
       const [only] = [...pointers.values()];
-      pan = { start: only, x: viewer.x, y: viewer.y, t: Date.now(), moved: true };
+      pan = { start: only, x: viewer.x, y: viewer.y, t: Date.now(), moved: true, mode: viewer.s > 1.02 ? 'pan' : null };
     }
   };
   area.addEventListener('pointerup', end);
   area.addEventListener('pointercancel', end);
 
-  // Mausrad am Computer
+  // Mausrad und Pfeiltasten am Computer
   area.addEventListener('wheel', (e) => {
     e.preventDefault();
     const p = rel(e);
     viewerZoomAt(p.x, p.y, viewer.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15), false);
   }, { passive: false });
+  document.addEventListener('keydown', (e) => {
+    if (!isViewerOpen()) return;
+    if (e.key === 'ArrowLeft') viewerStep(-1);
+    else if (e.key === 'ArrowRight') viewerStep(1);
+    else if (e.key === 'Escape') closeViewer();
+  });
 
   window.addEventListener('resize', () => { if (isViewerOpen()) viewerLayout(); });
 })();
@@ -2053,7 +2149,7 @@ function renderResults() {
       del.setAttribute('aria-label', `Foto ${i + 1} entfernen`);
       del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>';
       del.addEventListener('click', () => removeSeriesItem(it));
-      img.addEventListener('click', () => openViewer(it.url));
+      img.addEventListener('click', () => openViewer(items.map((x) => x.url), i));
       cell.append(img, num, del);
       el.resultGrid.appendChild(cell);
     });
@@ -2508,9 +2604,11 @@ on(el.btnShare, shareResults);
 on(el.btnPdf, pdfResults);
 on(el.btnZip, zipResults);
 on(el.btnNew, newShot);
-on(el.resultImg, () => { if (state.shown) openViewer(state.shown.items[0].url); });
-on(el.zoomHint, () => { if (state.shown) openViewer(state.shown.items[0].url); });
+on(el.resultImg, () => { if (state.shown) openViewer([state.shown.items[0].url]); });
+on(el.zoomHint, () => { if (state.shown) openViewer([state.shown.items[0].url]); });
 on(el.viewerClose, closeViewer);
+on(el.viewerPrev, () => viewerStep(-1));
+on(el.viewerNext, () => viewerStep(1));
 on(el.dialogOk, () => closeDialog(true));
 on(el.dialogCancel, () => closeDialog(false));
 on(el.dialog, (e) => { if (e.target === el.dialog) closeDialog(false); });

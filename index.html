@@ -7,7 +7,7 @@
   <title>Hier &amp; Jetzt</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
   <!-- Startseite -->
@@ -76,7 +76,7 @@
         </div>
       </div>
       <div id="start-error" class="start-error hidden"></div>
-      <button id="start-version" class="start-version">Version 11</button>
+      <button id="start-version" class="start-version">Version 12</button>
     </div>
   </section>
 
@@ -178,6 +178,13 @@
     <button id="viewer-close" class="glass-btn viewer-close" aria-label="Schließen">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>
     </button>
+    <div id="viewer-count" class="viewer-count hidden">1 / 1</div>
+    <button id="viewer-prev" class="glass-btn viewer-nav viewer-prev hidden" aria-label="Vorheriges Foto">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 4.6 14 3.2 5.2 12l8.8 8.8 1.4-1.4L8 12z"/></svg>
+    </button>
+    <button id="viewer-next" class="glass-btn viewer-nav viewer-next hidden" aria-label="Nächstes Foto">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 4.6 10 3.2l8.8 8.8L10 20.8l-1.4-1.4L16 12z"/></svg>
+    </button>
     <div id="viewer-hint" class="viewer-hint">Zoomen: zwei Finger oder doppelt tippen</div>
   </div>
 
@@ -233,8 +240,8 @@
   </section>
 
   <canvas id="canvas" class="hidden"></canvas>
-  <script src="exif.js?v=11"></script>
-  <script src="export.js?v=11"></script>
-  <script src="app.js?v=11"></script>
+  <script src="exif.js?v=12"></script>
+  <script src="export.js?v=12"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>
