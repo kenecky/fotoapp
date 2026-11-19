@@ -17,6 +17,12 @@ const CONFIG = {
 
 const $ = (id) => document.getElementById(id);
 const el = {
+  viewStart: $('view-start'),
+  btnOpenCamera: $('btn-open-camera'),
+  startGps: $('start-gps'),
+  startAddr: $('start-addr'),
+  btnBack: $('btn-back'),
+  btnHome: $('btn-home'),
   viewCamera: $('view-camera'),
   viewBusy: $('view-busy'),
   viewResult: $('view-result'),
@@ -49,7 +55,7 @@ const state = {
 /* ------------------------------------------------------------------ */
 
 function show(view) {
-  for (const v of [el.viewCamera, el.viewBusy, el.viewResult]) {
+  for (const v of [el.viewStart, el.viewCamera, el.viewBusy, el.viewResult]) {
     v.classList.toggle('hidden', v !== view);
   }
 }
@@ -149,19 +155,25 @@ function freshPosition() {
 
 function updateGpsUi() {
   const p = freshPosition();
-  const chip = el.gpsChip;
+  let text, cls;
   if (p) {
     const acc = Math.round(p.coords.accuracy);
-    chip.textContent = `GPS ±${acc} m`;
-    chip.className = 'chip ' + (acc <= 20 ? 'chip-good' : acc <= 100 ? 'chip-medium' : 'chip-bad');
+    text = `GPS ±${acc} m`;
+    cls = acc <= 20 ? 'chip-good' : acc <= 100 ? 'chip-medium' : 'chip-bad';
   } else if (state.gpsError) {
-    chip.textContent = state.gpsError;
-    chip.className = 'chip chip-bad';
+    text = state.gpsError;
+    cls = 'chip-bad';
   } else {
-    chip.textContent = 'GPS wird gesucht …';
-    chip.className = 'chip chip-wait';
+    text = 'GPS wird gesucht …';
+    cls = 'chip-wait';
   }
-  el.addrLine.textContent = state.address ? state.address.text.replace('\n', ', ') : '';
+  const addr = state.address ? state.address.text.replace('\n', ', ') : '';
+  for (const chip of [el.gpsChip, el.startGps]) {
+    chip.textContent = text;
+    chip.className = 'chip ' + cls;
+  }
+  el.addrLine.textContent = addr;
+  el.startAddr.textContent = addr;
 }
 
 /** Wartet beim Auslösen kurz auf eine aktuelle Position, falls noch keine da ist. */
@@ -389,6 +401,7 @@ async function takePhoto() {
     const blob = await canvasToBlob(canvas);
     setResult(blob, `Foto_${fileTimestamp(takenAt)}.jpg`);
     stopCamera(); // Akku sparen, solange das Ergebnis angezeigt wird
+    history.replaceState({ view: 'result' }, '');
     show(el.viewResult);
   } catch (err) {
     console.error(err);
@@ -440,18 +453,54 @@ async function shareResult() {
 
 function newPhoto() {
   clearResult();
+  history.replaceState({ view: 'camera' }, '');
   show(el.viewCamera);
   startCamera();
 }
 
 /* ------------------------------------------------------------------ */
+/* Navigation (Startseite <-> Kamera, inkl. Android-Zurück-Taste)       */
+/* ------------------------------------------------------------------ */
+
+function openCamera() {
+  history.pushState({ view: 'camera' }, '');
+  show(el.viewCamera);
+  startCamera();
+}
+
+function showStart() {
+  stopCamera();
+  clearResult();
+  show(el.viewStart);
+}
+
+// Zurück (Button oder Android-Zurück-Taste) führt immer zur Startseite
+function goBack() {
+  if (history.state && history.state.view !== 'start') history.back();
+  else showStart();
+}
+
+window.addEventListener('popstate', () => {
+  if (!el.viewBusy.classList.contains('hidden')) {
+    // Während der Verarbeitung nicht wegnavigieren
+    history.pushState({ view: 'camera' }, '');
+    return;
+  }
+  showStart();
+});
+
+/* ------------------------------------------------------------------ */
 /* Start                                                               */
 /* ------------------------------------------------------------------ */
 
+el.btnOpenCamera.addEventListener('click', openCamera);
+el.btnBack.addEventListener('click', goBack);
+el.btnHome.addEventListener('click', goBack);
 el.shutter.addEventListener('click', takePhoto);
 el.btnDownload.addEventListener('click', downloadResult);
 el.btnShare.addEventListener('click', shareResult);
 el.btnNew.addEventListener('click', newPhoto);
+history.replaceState({ view: 'start' }, '');
 
 // Kamera und GPS pausieren, wenn die App im Hintergrund ist
 document.addEventListener('visibilitychange', () => {
@@ -467,8 +516,8 @@ document.addEventListener('visibilitychange', () => {
 // Anzeige regelmäßig aktualisieren (z. B. wenn die Position veraltet)
 setInterval(updateGpsUi, 5000);
 
+// GPS läuft schon auf der Startseite, damit beim Foto sofort ein Standort da ist
 startGps();
-startCamera();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

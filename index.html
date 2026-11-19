@@ -3,20 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#141414">
   <title>FotoApp</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Startseite -->
+  <section id="view-start" class="view">
+    <div class="start-main">
+      <img class="start-logo" src="icons/icon-512.png" alt="">
+      <h1 class="start-title">FotoApp</h1>
+      <p class="start-sub">Fotos mit Zeitstempel, GPS&nbsp;und&nbsp;Adresse</p>
+
+      <button id="btn-open-camera" class="big-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+        </svg>
+        Kamera
+      </button>
+    </div>
+
+    <div class="start-footer">
+      <div id="start-gps" class="chip chip-wait">GPS wird gesucht …</div>
+      <div id="start-addr" class="start-addr"></div>
+    </div>
+  </section>
+
   <!-- Kamera-Ansicht -->
-  <section id="view-camera" class="view">
+  <section id="view-camera" class="view hidden">
     <video id="video" autoplay playsinline muted></video>
 
     <div class="status">
-      <div id="gps-chip" class="chip chip-wait">GPS wird gesucht …</div>
-      <div id="addr-line" class="addr"></div>
+      <button id="btn-back" class="back-btn" aria-label="Zurück zur Startseite">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 4.6 14 3.2 5.2 12l8.8 8.8 1.4-1.4L8 12z"/></svg>
+      </button>
+      <div class="status-text">
+        <div id="gps-chip" class="chip chip-wait">GPS wird gesucht …</div>
+        <div id="addr-line" class="addr"></div>
+      </div>
     </div>
 
     <div id="cam-message" class="message hidden"></div>
@@ -41,6 +67,7 @@
       <button id="btn-download" class="btn btn-primary">Herunterladen</button>
       <button id="btn-share" class="btn hidden">Teilen</button>
       <button id="btn-new" class="btn">Neues Foto</button>
+      <button id="btn-home" class="btn">Startseite</button>
     </div>
   </section>
 
