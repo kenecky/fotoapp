@@ -7,11 +7,17 @@
   <title>Hier &amp; Jetzt</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <!-- Startseite -->
   <section id="view-start" class="view">
+    <div id="ptr" class="ptr" aria-hidden="true">
+      <div class="ptr-circle">
+        <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+      </div>
+      <div id="ptr-label" class="ptr-label">Zum Aktualisieren ziehen</div>
+    </div>
     <div class="start-main">
       <img class="start-logo" src="icons/logo.svg" alt="">
       <h1 class="start-title">Hier &amp; Jetzt</h1>
@@ -70,7 +76,7 @@
         </div>
       </div>
       <div id="start-error" class="start-error hidden"></div>
-      <button id="start-version" class="start-version">Version 9</button>
+      <button id="start-version" class="start-version">Version 10</button>
     </div>
   </section>
 
@@ -214,8 +220,8 @@
   </section>
 
   <canvas id="canvas" class="hidden"></canvas>
-  <script src="exif.js?v=9"></script>
-  <script src="export.js?v=9"></script>
-  <script src="app.js?v=9"></script>
+  <script src="exif.js?v=10"></script>
+  <script src="export.js?v=10"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

@@ -2320,6 +2320,63 @@ document.addEventListener('visibilitychange', () => {
 // Anzeige regelmäßig aktualisieren (z. B. wenn die Position veraltet)
 setInterval(() => { updateGpsUi(); updateTimeUi(); }, 5000);
 
+/* Startseite: von oben nach unten ziehen = App aktualisieren (nur im oberen Drittel) */
+(function setupPullToRefresh() {
+  const view = el.viewStart;
+  const ptr = $('ptr');
+  const label = $('ptr-label');
+  const THRESHOLD = 90;   // so weit (nach Dämpfung) muss gezogen werden
+  let start = null;
+  let pull = 0;
+  let refreshing = false;
+
+  const render = () => {
+    const p = Math.min(pull / THRESHOLD, 1);
+    ptr.style.transform = `translate(-50%, ${Math.min(pull, THRESHOLD * 1.3) - 70}px)`;
+    ptr.style.opacity = String(Math.min(1, pull / 30));
+    ptr.querySelector('svg').style.transform = `rotate(${p * 270}deg)`;
+    ptr.classList.toggle('ready', pull >= THRESHOLD);
+    label.textContent = pull >= THRESHOLD ? 'Loslassen zum Aktualisieren' : 'Zum Aktualisieren ziehen';
+  };
+  const reset = () => {
+    pull = 0;
+    ptr.classList.add('animate');
+    render();
+    setTimeout(() => ptr.classList.remove('animate'), 250);
+  };
+
+  view.addEventListener('pointerdown', (e) => {
+    if (refreshing || !isVisible(view) || e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.clientY > window.innerHeight / 3) return; // nur im oberen Drittel
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+  });
+  view.addEventListener('pointermove', (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = e.clientY - start.y;
+    if (pull === 0 && Math.abs(e.clientX - start.x) > Math.abs(dy) && Math.abs(dy) < 10) return;
+    pull = Math.max(0, dy * 0.55); // gedämpft
+    if (pull > 0 && !view.hasPointerCapture(e.pointerId)) view.setPointerCapture(e.pointerId);
+    render();
+  });
+  const end = async (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    start = null;
+    if (pull < THRESHOLD) { reset(); return; }
+    refreshing = true;
+    ptr.classList.add('animate', 'loading');
+    pull = THRESHOLD;
+    render();
+    label.textContent = 'Wird aktualisiert …';
+    try {
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+      if (reg) await Promise.race([reg.update(), sleep(3000)]);
+    } catch (err) { /* trotzdem neu laden */ }
+    location.reload();
+  };
+  view.addEventListener('pointerup', end);
+  view.addEventListener('pointercancel', end);
+})();
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service Worker:', e));

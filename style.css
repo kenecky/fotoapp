@@ -46,7 +46,8 @@ button { font-family: inherit; }
 
 #view-start {
   padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 20px);
-  overflow-y: auto;
+  overflow: hidden;      /* Startseite scrollt nicht */
+  touch-action: none;    /* eigenes „Nach unten ziehen zum Aktualisieren“ */
 }
 
 .start-main {
@@ -989,12 +990,12 @@ button { font-family: inherit; }
   box-shadow: 0 10px 26px rgba(14, 165, 233, .32);
 }
 .menu-video {
-  background: linear-gradient(135deg, #6366F1 0%, #A855F7 100%);
-  box-shadow: 0 10px 26px rgba(124, 58, 237, .32);
+  background: linear-gradient(135deg, #059669 0%, #0284C7 100%);
+  box-shadow: 0 10px 26px rgba(2, 132, 199, .30);
 }
 .menu-compare {
-  background: linear-gradient(135deg, #F59E0B 0%, #F43F5E 100%);
-  box-shadow: 0 10px 26px rgba(244, 63, 94, .30);
+  background: linear-gradient(135deg, #047857 0%, #0369A1 100%);
+  box-shadow: 0 10px 26px rgba(3, 105, 161, .30);
 }
 
 .dialog-backdrop {
@@ -1046,3 +1047,80 @@ button { font-family: inherit; }
   background: linear-gradient(135deg, #F97316 0%, #EF4444 100%);
   box-shadow: 0 8px 20px rgba(239, 68, 68, .3);
 }
+
+/* ================================================================== */
+/* Version 10: Startseite ohne Scrollen, „Nach unten ziehen“           */
+/* ================================================================== */
+
+html, body { overscroll-behavior-y: none; } /* Chrome-eigenes Neuladen aus, wir haben ein eigenes */
+
+#view-start { height: 100dvh; }
+
+.ptr {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top) + 8px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transform: translate(-50%, -70px);
+  pointer-events: none;
+}
+.ptr.animate { transition: transform .25s ease, opacity .25s ease; }
+.ptr-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 6px 18px rgba(15,23,42,.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ptr-circle svg { width: 24px; height: 24px; fill: var(--muted); }
+.ptr.ready .ptr-circle { background: var(--gradient); }
+.ptr.ready .ptr-circle svg { fill: #fff; }
+.ptr.loading .ptr-circle svg { animation: spin .8s linear infinite; }
+.ptr-label {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.9);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Kleinere Bildschirme: alles etwas kompakter, damit nichts scrollt */
+@media (max-height: 760px) {
+  #view-start { padding-top: calc(env(safe-area-inset-top) + 14px); padding-bottom: calc(env(safe-area-inset-bottom) + 12px); }
+  .start-logo { width: 68px; height: 68px; border-radius: 18px; }
+  .start-title { margin: 12px 0 4px; font-size: 26px; }
+  .start-sub { margin-bottom: 20px; font-size: 14px; }
+  .menu-btn { padding: 12px 16px; }
+  .menu-btn + .menu-btn { margin-top: 12px; }
+  .menu-icon { width: 42px; height: 42px; border-radius: 12px; }
+  .start-footer { margin-top: 14px; }
+  .status-row { padding: 8px 0; }
+  .start-version { margin-top: 4px; }
+}
+@media (max-height: 640px) {
+  .start-logo { width: 52px; height: 52px; border-radius: 14px; }
+  .start-title { margin-top: 8px; font-size: 22px; }
+  .start-sub { margin-bottom: 14px; font-size: 13px; }
+  .menu-btn { padding: 9px 14px; }
+  .menu-btn + .menu-btn { margin-top: 9px; }
+  .menu-icon { width: 38px; height: 38px; }
+  .menu-title { font-size: 16px; }
+  .menu-sub { font-size: 12px; }
+  .status-row { padding: 5px 0; }
+  .gps-title { font-size: 13px; }
+  .gps-sub { font-size: 12px; }
+}
+
+/* Beim Ziehen keinen Text markieren und das Logo nicht „anfassen“ */
+#view-start { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.start-logo { -webkit-user-drag: none; pointer-events: none; }
