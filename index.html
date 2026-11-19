@@ -7,7 +7,7 @@
   <title>FotoApp</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <!-- Startseite -->
@@ -34,6 +34,8 @@
     <div class="start-footer">
       <div id="start-gps" class="chip chip-wait">GPS wird gesucht …</div>
       <div id="start-addr" class="start-addr"></div>
+      <div id="start-error" class="start-error hidden"></div>
+      <div class="start-version">Version 4</div>
     </div>
   </section>
 
@@ -80,6 +82,6 @@
   </section>
 
   <canvas id="canvas" class="hidden"></canvas>
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

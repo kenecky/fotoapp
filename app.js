@@ -734,14 +734,31 @@ function onShutter() {
 /* Start                                                               */
 /* ------------------------------------------------------------------ */
 
-el.btnOpenPhoto.addEventListener('click', () => openCamera('photo'));
-el.btnOpenVideo.addEventListener('click', () => openCamera('video'));
-el.btnBack.addEventListener('click', goBack);
-el.btnHome.addEventListener('click', goBack);
-el.shutter.addEventListener('click', onShutter);
-el.btnDownload.addEventListener('click', downloadResult);
-el.btnShare.addEventListener('click', shareResult);
-el.btnNew.addEventListener('click', newShot);
+// Fehler auf der Startseite anzeigen, damit man sie am Handy sieht
+function showStartError(msg) {
+  const box = document.getElementById('start-error');
+  if (!box) return;
+  box.textContent = 'Fehler: ' + msg;
+  box.classList.remove('hidden');
+}
+window.addEventListener('error', (e) => showStartError(e.message));
+window.addEventListener('unhandledrejection', (e) => showStartError(String(e.reason && e.reason.message || e.reason)));
+
+// GPS läuft schon auf der Startseite, damit beim Auslösen sofort ein Standort da ist
+startGps();
+
+function on(element, handler) {
+  if (element) element.addEventListener('click', handler);
+  else showStartError('Seite unvollständig geladen – bitte App schließen und neu öffnen.');
+}
+on(el.btnOpenPhoto, () => openCamera('photo'));
+on(el.btnOpenVideo, () => openCamera('video'));
+on(el.btnBack, goBack);
+on(el.btnHome, goBack);
+on(el.shutter, onShutter);
+on(el.btnDownload, downloadResult);
+on(el.btnShare, shareResult);
+on(el.btnNew, newShot);
 history.replaceState({ view: 'start' }, '');
 
 // Kamera und GPS pausieren, wenn die App im Hintergrund ist.
@@ -759,9 +776,6 @@ document.addEventListener('visibilitychange', () => {
 
 // Anzeige regelmäßig aktualisieren (z. B. wenn die Position veraltet)
 setInterval(updateGpsUi, 5000);
-
-// GPS läuft schon auf der Startseite, damit beim Auslösen sofort ein Standort da ist
-startGps();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

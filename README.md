@@ -44,4 +44,4 @@ Heruntergeladene Fotos landen im Ordner **Downloads** und erscheinen in der Gale
 
 ## Nach Änderungen
 
-In `sw.js` die Versionsnummer (`fotoapp-v1` → `fotoapp-v2` …) erhöhen, damit die Handys die neue Version sicher laden.
+In `sw.js` die Versionsnummer (`fotoapp-v4` → `fotoapp-v5` …), in `index.html` die `?v=`-Nummer bei `style.css` und `app.js` sowie die angezeigte „Version“ erhöhen. Sonst kann das Handy eine Mischung aus alten und neuen Dateien laden.
