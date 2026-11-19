@@ -100,6 +100,7 @@ const Exif = (() => {
 
     const ifd0 = [ascii(0x0131, 'Hier & Jetzt'), ascii(0x0132, dt)];
     if (meta.description) ifd0.push(ascii(0x010E, meta.description));
+    if (meta.artist) ifd0.push(ascii(0x013B, meta.artist));
 
     const exifIfd = [ascii(0x9003, dt), ascii(0x9004, dt), ascii(0x9011, tzOffset(date))];
 

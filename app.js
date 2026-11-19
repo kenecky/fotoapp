@@ -111,6 +111,25 @@ const el = {
   viewerNext: $('viewer-next'),
   viewerCount: $('viewer-count'),
   zoomHint: $('zoom-hint'),
+  btnHistory: $('btn-history'),
+  btnSettings: $('btn-settings'),
+  nameRow: $('name-row'),
+  settings: $('settings'),
+  settingsPanel: $('settings-panel'),
+  settingsGrab: $('settings-grab'),
+  settingsClose: $('settings-close'),
+  settingsName: $('settings-name'),
+  settingsStorage: $('settings-storage'),
+  settingsClear: $('settings-clear'),
+  settingsSave: $('settings-save'),
+  viewHistory: $('view-history'),
+  historyBack: $('history-back'),
+  historyList: $('history-list'),
+  viewerEdit: $('viewer-edit'),
+  btnAnnotate: $('btn-annotate'),
+  dialogInput: $('dialog-input'),
+  dialogIcon: $('dialog-icon'),
+  dialogIconPath: $('dialog-icon-path'),
   dialog: $('dialog'),
   dialogTitle: $('dialog-title'),
   dialogText: $('dialog-text'),
@@ -145,6 +164,7 @@ const state = {
   series: [],              // Fotos der laufenden Serie
   seriesPending: 0,
   seriesNo: 0,
+  seriesEntryId: null,      // Eintrag der laufenden Serie im Verlauf
   controlsTrack: null,
   seriesQueue: Promise.resolve(),
   seriesSaved: true,
@@ -195,6 +215,22 @@ function formatDistance(m) {
 }
 
 const oneLine = (text) => (text || '').replace(/\n/g, ', ');
+
+/* ------------------------------------------------------------------ */
+/* Einstellungen                                                       */
+/* ------------------------------------------------------------------ */
+
+const settings = { name: '' };
+try { settings.name = localStorage.getItem('hj.name') || ''; } catch (e) { /* egal */ }
+
+/* Verlaufseinträge, die die App selbst entfernt, sollen kein „Zurück“ auslösen */
+let skipPop = 0;
+function popEntry(view) {
+  if (history.state && history.state.view === view) {
+    skipPop++;
+    history.back();
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Firmenlogo                                                          */
@@ -304,7 +340,7 @@ function updateTimeUi() {
 const themeColorMeta = document.querySelector('meta[name="theme-color"]');
 
 function show(view) {
-  for (const v of [el.viewStart, el.viewCamera, el.viewBusy, el.viewResult]) {
+  for (const v of [el.viewStart, el.viewHistory, el.viewCamera, el.viewBusy, el.viewResult]) {
     v.classList.toggle('hidden', v !== view);
   }
   // Statusleiste des Handys passend färben: Kamera dunkel, sonst hell
@@ -937,8 +973,7 @@ function closeSheet() {
  * In der Adressliste beginnt das Wischen erst, wenn die Liste ganz oben steht
  * (sonst wird normal gescrollt).
  */
-(function setupSheetDrag() {
-  const panel = el.sheetPanel;
+function setupSheetDrag(panel, grab, close) {
   const body = panel.querySelector('.sheet-body');
   let drag = null; // { x, y, t, active }
 
@@ -948,7 +983,7 @@ function closeSheet() {
     const fast = dy > 40 && dt < 300;
     if (dy > 110 || fast) {
       panel.style.transform = 'translateY(100%)';
-      closeSheet();
+      close();
     } else {
       panel.style.transform = '';
     }
@@ -993,22 +1028,23 @@ function closeSheet() {
 
   // Maus (am Computer): am Kopfbereich ziehen
   let mouse = null;
-  el.sheetGrab.addEventListener('pointerdown', (e) => {
+  grab.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'mouse' || e.target.closest('button')) return;
     mouse = { y: e.clientY, t: Date.now() };
     panel.style.transition = 'none';
-    el.sheetGrab.setPointerCapture(e.pointerId);
+    grab.setPointerCapture(e.pointerId);
   });
-  el.sheetGrab.addEventListener('pointermove', (e) => { if (mouse) move(e.clientY - mouse.y); });
+  grab.addEventListener('pointermove', (e) => { if (mouse) move(e.clientY - mouse.y); });
   const mouseEnd = (e) => {
     if (!mouse) return;
     const m = mouse;
     mouse = null;
     finish(Math.max(0, e.clientY - m.y), Date.now() - m.t);
   };
-  el.sheetGrab.addEventListener('pointerup', mouseEnd);
-  el.sheetGrab.addEventListener('pointercancel', mouseEnd);
-})();
+  grab.addEventListener('pointerup', mouseEnd);
+  grab.addEventListener('pointercancel', mouseEnd);
+}
+setupSheetDrag(el.sheetPanel, el.sheetGrab, () => closeSheet());
 
 /* ------------------------------------------------------------------ */
 /* Großansicht mit Zoom                                                */
@@ -1018,9 +1054,10 @@ const viewer = { s: 1, x: 0, y: 0, dx: 0, dy: 0, base: null, urls: [], index: 0 
 const isViewerOpen = () => !el.viewer.classList.contains('hidden');
 
 /** Großansicht öffnen; bei mehreren Bildern mit Blättern (Galerie). */
-function openViewer(urls, index = 0) {
+function openViewer(urls, index = 0, items = null) {
   history.pushState({ view: 'viewer' }, '');
   viewer.urls = urls;
+  viewer.items = items;
   el.viewer.classList.remove('hidden');
   el.viewer.style.background = '';
   el.viewerHint.textContent = urls.length > 1
@@ -1042,6 +1079,8 @@ function showViewerImage(index, from) {
   el.viewerPrev.disabled = index <= 0;
   el.viewerNext.disabled = index >= viewer.urls.length - 1;
   el.viewerCount.textContent = `${index + 1} / ${viewer.urls.length}`;
+  const item = viewer.items && viewer.items[index];
+  el.viewerEdit.classList.toggle('hidden', !(item && item.kind !== 'video'));
 
   const img = el.viewerImg;
   img.onload = () => {
@@ -1559,6 +1598,7 @@ function renderStamp(w, h, info, target) {
   } else {
     add('Kein Standort verfügbar', true, '#ffb4ab');
   }
+  if (info.employee) add('Aufgenommen von ' + info.employee, false, '#CBD5E1');
 
   const boxHeight = Math.max(rows.length * lineHeight, plate ? plate.h : 0) + pad * 2;
   canvas.width = w;
@@ -1594,6 +1634,17 @@ function renderStamp(w, h, info, target) {
   return canvas;
 }
 
+/** EXIF-Daten eines Ergebnisses (z. B. nach dem Markieren erneut schreiben). */
+function exifMetaFor(item) {
+  const m = item.meta || {};
+  return {
+    date: m.date,
+    pos: m.posData ? { coords: m.posData, timestamp: m.posData.timestamp } : null,
+    description: exifDescription(m.note, m.address),
+    artist: m.employee,
+  };
+}
+
 function exifDescription(note, address) {
   return [note, oneLine(address)].filter(Boolean).join(' | ');
 }
@@ -1623,6 +1674,7 @@ function captureFrame() {
     perf: performance.now(),
     device: Date.now(),
     note: state.note,
+    employee: settings.name,
     compare: state.mode === 'compare' && state.before ? state.before : null,
   };
 }
@@ -1647,6 +1699,7 @@ async function processFrame(frame, status = () => {}) {
     note: frame.note,
     address,
     coords,
+    employee: frame.employee,
   });
   ctx.drawImage(stamp, 0, h - stamp.height);
 
@@ -1662,7 +1715,7 @@ async function processFrame(frame, status = () => {}) {
 
   let blob = await canvasToBlob(out);
   try {
-    blob = await Exif.insert(blob, { date: t.date, pos, description: exifDescription(frame.note, address) });
+    blob = await Exif.insert(blob, { date: t.date, pos, description: exifDescription(frame.note, address), artist: frame.employee });
   } catch (e) {
     console.warn('EXIF konnte nicht geschrieben werden:', e);
   }
@@ -1680,6 +1733,14 @@ async function processFrame(frame, status = () => {}) {
       address,
       coords,
       note: frame.note,
+      employee: frame.employee,
+      posData: pos ? {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        altitude: pos.coords.altitude,
+        timestamp: pos.timestamp,
+      } : null,
       compareDate: frame.compare && frame.compare.date,
     },
   };
@@ -1707,6 +1768,7 @@ async function takePhoto() {
         state.seriesNo++;
         item.filename = item.filename.replace(/\.jpg$/, `_${pad2(state.seriesNo)}.jpg`);
         state.series.push(item);
+        persistSeriesSoon();
       })
       .catch((err) => {
         console.error(err);
@@ -1768,7 +1830,8 @@ async function finishSeries() {
     startCamera();
     return;
   }
-  showResults('series', state.series);
+  if (!state.seriesEntryId) state.seriesEntryId = newEntryId();
+  showResults('series', state.series, { entryId: state.seriesEntryId });
 }
 
 function discardSeries() {
@@ -1776,6 +1839,8 @@ function discardSeries() {
   state.series = [];
   state.seriesNo = 0;
   state.seriesSaved = true;
+  state.seriesEntryId = null;
+  clearTimeout(seriesSaveTimer);
   updateSeriesUi();
 }
 
@@ -1954,6 +2019,7 @@ function liveStampInfo() {
     note: state.note,
     address: currentAddressText(pos),
     coords: pos ? formatCoords(pos) : null,
+    employee: settings.name,
   };
 }
 
@@ -2017,7 +2083,7 @@ async function startRecording() {
       ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh);
     }
     const info = liveStampInfo();
-    const key = [info.timestamp, info.timeVerified, info.note, info.address, info.coords].join('|');
+    const key = [info.timestamp, info.timeVerified, info.note, info.address, info.coords, info.employee].join('|');
     if (key !== rec.stampKey) {
       renderStamp(w, h, info, rec.stampCanvas);
       rec.stampKey = key;
@@ -2100,7 +2166,7 @@ function finishRecording(rec) {
     blob,
     url: URL.createObjectURL(blob),
     filename: makeFilename('Video', rec.startedAt, rec.address, ext),
-    meta: { date: rec.startedAt, address: rec.address },
+    meta: { date: rec.startedAt, address: rec.address, note: state.note, employee: settings.name },
   }]);
 }
 
@@ -2115,11 +2181,129 @@ const RESULT_TEXT = {
   series: { title: 'Serie', again: 'Weitere Fotos' },
 };
 
-function showResults(kind, items) {
-  state.shown = { kind, items };
+const KIND_LABEL = { photo: 'Foto', video: 'Video', compare: 'Vorher/Nachher', series: 'Serie' };
+
+function showResults(kind, items, opts = {}) {
+  state.shown = { kind, items, entryId: opts.entryId || null, fromHistory: !!opts.fromHistory };
   history.replaceState({ view: 'result' }, '');
   renderResults();
   show(el.viewResult);
+  if (!opts.fromHistory) persistShown();
+}
+
+/* ---------- Verlauf speichern ---------- */
+
+const newEntryId = () => 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+async function imageThumb(blob) {
+  const bmp = await createImageBitmap(blob);
+  const s = Math.min(1, 360 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * s);
+  c.height = Math.round(bmp.height * s);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  if (bmp.close) bmp.close();
+  return canvasToBlob(c, 0.7);
+}
+
+function videoThumb(blob) {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(blob);
+    let done = false;
+    const finish = (b) => {
+      if (done) return;
+      done = true;
+      URL.revokeObjectURL(url);
+      resolve(b);
+    };
+    const timer = setTimeout(() => finish(null), 4000);
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    v.onloadeddata = () => { v.currentTime = 0.2; };
+    v.onseeked = async () => {
+      clearTimeout(timer);
+      try {
+        const s = Math.min(1, 360 / Math.max(v.videoWidth, v.videoHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(v.videoWidth * s);
+        c.height = Math.round(v.videoHeight * s);
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        finish(await canvasToBlob(c, 0.7));
+      } catch (e) { finish(null); }
+    };
+    v.onerror = () => { clearTimeout(timer); finish(null); };
+    v.src = url;
+  });
+}
+
+async function saveEntry(kind, items, id) {
+  if (!items.length || !window.indexedDB) return;
+  try {
+    const last = items[items.length - 1];
+    let thumb = null;
+    try { thumb = last.kind === 'video' ? await videoThumb(last.blob) : await imageThumb(last.blob); } catch (e) { /* ohne Vorschau */ }
+    const first = items[0].meta || {};
+    await HistoryStore.put({
+      id,
+      kind,
+      createdAt: first.date ? +first.date : Date.now(),
+      updatedAt: Date.now(),
+      address: first.address || null,
+      note: first.note || '',
+      count: items.length,
+      thumb,
+      items: items.map(HistoryStore.toStored),
+    });
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  } catch (err) {
+    console.warn('Verlauf konnte nicht gespeichert werden:', err);
+  }
+}
+
+/** Angezeigtes Ergebnis im Verlauf speichern bzw. aktualisieren. */
+function persistShown() {
+  const s = state.shown;
+  if (!s || !s.items.length) return;
+  if (!s.entryId) s.entryId = newEntryId();
+  if (s.kind === 'series') state.seriesEntryId = s.entryId;
+  saveEntry(s.kind, s.items.slice(), s.entryId);
+}
+
+let seriesSaveTimer = null;
+function persistSeriesSoon() {
+  clearTimeout(seriesSaveTimer);
+  seriesSaveTimer = setTimeout(() => {
+    if (!state.series.length) return;
+    if (!state.seriesEntryId) state.seriesEntryId = newEntryId();
+    saveEntry('series', state.series.slice(), state.seriesEntryId);
+  }, 800);
+}
+
+/* ---------- Markieren ---------- */
+
+async function annotateItem(item) {
+  try {
+    await Editor.open(item, async (blob) => {
+      URL.revokeObjectURL(item.url);
+      item.blob = blob;
+      item.url = URL.createObjectURL(blob);
+      if (!/_markiert\.jpg$/.test(item.filename)) item.filename = item.filename.replace(/\.jpg$/, '_markiert.jpg');
+      item.meta.annotated = true;
+      if (state.shown) {
+        renderResults();
+        persistShown();
+      }
+      if (isViewerOpen() && viewer.items) {
+        viewer.urls = viewer.items.map((x) => x.url);
+        showViewerImage(viewer.index, 0);
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    alert('Das Foto kann nicht markiert werden: ' + err.message);
+  }
 }
 
 function renderResults() {
@@ -2135,7 +2319,9 @@ function renderResults() {
   el.resultVideo.removeAttribute('src');
 
   if (isSeries) {
-    el.resultTitle.textContent = items.length === 1 ? '1 Foto aufgenommen' : `${items.length} Fotos aufgenommen`;
+    el.resultTitle.textContent = state.shown.fromHistory
+      ? `Serie · ${formatShortDate(items[0].meta.date)}`
+      : items.length === 1 ? '1 Foto aufgenommen' : `${items.length} Fotos aufgenommen`;
     el.resultGrid.innerHTML = '';
     items.forEach((it, i) => {
       const cell = document.createElement('div');
@@ -2160,12 +2346,14 @@ function renderResults() {
         });
         if (ok) removeSeriesItem(it);
       });
-      img.addEventListener('click', () => openViewer(items.map((x) => x.url), i));
+      img.addEventListener('click', () => openViewer(items.map((x) => x.url), i, items));
       cell.append(img, num, del);
       el.resultGrid.appendChild(cell);
     });
   } else {
-    el.resultTitle.textContent = RESULT_TEXT[kind].title;
+    el.resultTitle.textContent = state.shown.fromHistory
+      ? `${KIND_LABEL[kind]} · ${formatShortDate(single.meta.date)}`
+      : RESULT_TEXT[kind].title;
     const isVideo = kind === 'video';
     el.resultImg.classList.toggle('hidden', isVideo);
     el.resultVideo.classList.toggle('hidden', !isVideo);
@@ -2182,6 +2370,9 @@ function renderResults() {
   el.btnShare.classList.toggle('hidden', !canShare);
   el.btnPdf.classList.toggle('hidden', kind === 'video');
   el.btnZip.classList.toggle('hidden', items.length < 2);
+  el.btnAnnotate.classList.toggle('hidden', kind !== 'photo' && kind !== 'compare');
+  el.btnNew.classList.toggle('hidden', state.shown.fromHistory);
+  el.btnHome.textContent = state.shown.fromHistory ? 'Zum Verlauf' : 'Startseite';
   for (const b of [el.btnDownload, el.btnShare, el.btnPdf, el.btnZip]) b.disabled = items.length === 0;
 }
 
@@ -2191,14 +2382,22 @@ function removeSeriesItem(item) {
   state.series.splice(i, 1);
   URL.revokeObjectURL(item.url);
   if (!state.series.length) {
-    // nichts mehr übrig: zurück zur Kamera
+    // nichts mehr übrig: Eintrag aus dem Verlauf löschen
+    if (state.seriesEntryId) HistoryStore.remove(state.seriesEntryId).catch(() => {});
+    const fromHistory = state.shown && state.shown.fromHistory;
     state.seriesSaved = true;
+    state.seriesEntryId = null;
     state.shown = null;
+    if (fromHistory) {
+      showHistory(false);
+      return;
+    }
     history.replaceState({ view: 'camera' }, '');
     enterCamera('photo');
     return;
   }
   renderResults();
+  persistShown();
 }
 
 /** Ergebnis verlassen: Einzelergebnisse freigeben (die Serie bleibt bis zur Startseite erhalten). */
@@ -2324,6 +2523,10 @@ async function createReport(items) {
   doc.text(title, doc.width - M - Pdf.textWidth(title, 22, true), y + 2, 22, { bold: true, color: TEXT });
   const created = `Erstellt am ${formatShortDate(now.date)}${now.verified ? ' (Zeit geprüft)' : ''}`;
   doc.text(created, doc.width - M - Pdf.textWidth(created, 9), y + 30, 9, { color: MUTED });
+  if (settings.name) {
+    const by = `Erstellt von ${settings.name}`;
+    doc.text(by, doc.width - M - Pdf.textWidth(by, 9), y + 42, 9, { color: MUTED });
+  }
   y += 62;
   doc.rect(M, y, CW, 2, '#0EA5E9');
   y += 16;
@@ -2366,6 +2569,8 @@ async function createReport(items) {
     if (p.meta.note) caption.push([p.meta.note, true, ACCENT]);
     if (p.meta.address) caption.push([oneLine(p.meta.address), false, TEXT]);
     caption.push([p.meta.coords || 'Kein Standort verfügbar', false, MUTED]);
+    const extra = [p.meta.employee ? `Aufgenommen von ${p.meta.employee}` : '', p.meta.annotated ? 'mit Markierungen' : ''].filter(Boolean).join(' · ');
+    if (extra) caption.push([extra, false, MUTED]);
     if (p.kind === 'compare') {
       caption.push([`Vorher/Nachher-Vergleich${p.meta.compareDate ? ' · Vorher aufgenommen ' + formatShortDate(p.meta.compareDate) : ''}`, false, MUTED]);
     }
@@ -2454,8 +2659,24 @@ function newShot() {
 let dialogResolve = null;
 const isDialogOpen = () => el.dialog.classList.contains('open'); // während der Schließ-Animation schon „zu“
 
-function confirmDialog({ title, text, ok = 'OK', cancel = 'Abbrechen', danger = false }) {
-  if (dialogResolve) dialogResolve(false);
+const DIALOG_ICONS = {
+  warn: 'M12 2 1 21h22L12 2zm1 15h-2v-2h2v2zm0-4h-2V9h2v4z',
+  edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
+};
+let dialogInputMode = false;
+
+/**
+ * Fenster im Stil der App. Liefert true/false – oder mit „input“ den eingegebenen Text (bzw. null).
+ */
+function confirmDialog({ title, text, ok = 'OK', cancel = 'Abbrechen', danger = false, input = null, icon = 'warn' }) {
+  if (dialogResolve) dialogResolve(dialogInputMode ? null : false);
+  dialogInputMode = input !== null;
+  el.dialogIconPath.setAttribute('d', DIALOG_ICONS[icon] || DIALOG_ICONS.warn);
+  el.dialogIcon.classList.toggle('dialog-icon-edit', icon === 'edit');
+  el.dialogInput.classList.toggle('hidden', !dialogInputMode);
+  el.dialogInput.value = '';
+  el.dialogInput.placeholder = dialogInputMode ? input : '';
+  if (dialogInputMode) setTimeout(() => el.dialogInput.focus(), 60);
   el.dialogTitle.textContent = title;
   el.dialogText.textContent = text;
   el.dialogOk.textContent = ok;
@@ -2471,7 +2692,8 @@ function closeDialog(result) {
   setTimeout(() => { if (!el.dialog.classList.contains('open')) el.dialog.classList.add('hidden'); }, 180);
   const r = dialogResolve;
   dialogResolve = null;
-  if (r) r(result);
+  if (el.dialogInput === document.activeElement) el.dialogInput.blur();
+  if (r) r(dialogInputMode ? (result ? el.dialogInput.value.trim() || null : null) : result);
 }
 
 /** Wurde eine Serie noch nicht gespeichert oder geteilt? */
@@ -2479,6 +2701,8 @@ const seriesUnsaved = () => state.series.length > 0 && !state.seriesSaved;
 
 /** Zur Startseite (eine nicht gespeicherte Serie wird vorher über askDiscardSeries abgefragt). */
 function showStart() {
+  if (Editor.isOpen()) Editor.hide();
+  if (isSettingsOpen()) hideSettings();
   if (isViewerOpen()) hideViewer();
   if (isDialogOpen()) closeDialog(false);
   if (isSheetOpen()) hideSheet();
@@ -2493,9 +2717,9 @@ function showStart() {
 async function askDiscardSeries() {
   const n = state.series.length;
   return confirmDialog({
-    title: 'Serie verwerfen?',
-    text: `${n === 1 ? 'Das Foto' : `Die ${n} Fotos`} der Serie ${n === 1 ? 'wurde' : 'wurden'} noch nicht gespeichert oder geteilt.`,
-    ok: 'Verwerfen',
+    title: 'Serie noch nicht gespeichert',
+    text: `${n === 1 ? 'Das Foto' : `Die ${n} Fotos`} der Serie ${n === 1 ? 'wurde' : 'wurden'} noch nicht heruntergeladen oder geteilt. Im Verlauf ${n === 1 ? 'bleibt es' : 'bleiben sie'} 30 Tage erhalten.`,
+    ok: 'Trotzdem verlassen',
     cancel: 'Zurück',
     danger: true,
   });
@@ -2508,6 +2732,32 @@ function goBack() {
 }
 
 window.addEventListener('popstate', () => {
+  if (skipPop > 0) {
+    skipPop--;
+    return;
+  }
+  if (isDialogOpen()) {
+    // Zurück-Taste bei offenem Fenster = Abbrechen (Seite bleibt, wie sie ist)
+    skipPop++;
+    history.forward();
+    closeDialog(false);
+    return;
+  }
+  if (Editor.isOpen()) {
+    if (Editor.hasChanges()) {
+      // erst nachfragen – Seite bleibt so lange offen
+      skipPop++;
+      history.forward();
+      Editor.cancel();
+    } else {
+      Editor.hide();
+    }
+    return;
+  }
+  if (isSettingsOpen()) {
+    hideSettings();
+    return;
+  }
   if (isViewerOpen()) {
     hideViewer();
     return;
@@ -2522,10 +2772,12 @@ window.addEventListener('popstate', () => {
     stopRecording();
     return;
   }
-  if (isDialogOpen()) {
-    // Zurück-Taste bei offenem Fenster = Abbrechen
-    history.pushState({ view: isVisible(el.viewResult) ? 'result' : 'camera' }, '');
-    closeDialog(false);
+  if (isVisible(el.viewResult) && state.shown && state.shown.fromHistory) {
+    // Aus dem Verlauf geöffnet: zurück zum Verlauf
+    const series = state.shown.kind === 'series';
+    leaveResult();
+    if (series) discardSeries();
+    showHistory(false);
     return;
   }
   if (seriesUnsaved() && !isVisible(el.viewStart)) {
@@ -2547,6 +2799,212 @@ function onShutter() {
     else startRecording();
   } else {
     takePhoto();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Einstellungen                                                       */
+/* ------------------------------------------------------------------ */
+
+const isSettingsOpen = () => !el.settings.classList.contains('hidden');
+
+function updateNameUi() {
+  el.nameRow.classList.toggle('hidden', !!settings.name);
+  fitStartPage();
+}
+
+async function openSettings() {
+  if (isSettingsOpen()) return;
+  history.pushState({ view: 'settings' }, '');
+  el.settingsName.value = settings.name;
+  el.settingsPanel.style.transform = '';
+  el.settings.classList.remove('hidden');
+  requestAnimationFrame(() => el.settings.classList.add('open'));
+  el.settingsStorage.textContent = `Aufnahmen werden ${HistoryStore.KEEP_DAYS} Tage lang nur auf diesem Handy gespeichert.`;
+  try {
+    const list = await HistoryStore.all();
+    let used = '';
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      used = ` · belegt ${Math.max(1, Math.round((est.usage || 0) / 1048576))} MB`;
+    }
+    el.settingsStorage.textContent += ` Aktuell ${list.length} ${list.length === 1 ? 'Eintrag' : 'Einträge'}${used}.`;
+  } catch (e) { /* egal */ }
+}
+
+function hideSettings() {
+  el.settings.classList.remove('open');
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  setTimeout(() => {
+    if (!el.settings.classList.contains('open')) {
+      el.settings.classList.add('hidden');
+      el.settingsPanel.style.transform = '';
+    }
+  }, 240);
+}
+
+function closeSettings() {
+  if (history.state && history.state.view === 'settings') history.back();
+  else hideSettings();
+}
+
+function saveSettings() {
+  settings.name = el.settingsName.value.trim().replace(/\s+/g, ' ').slice(0, 40);
+  try { localStorage.setItem('hj.name', settings.name); } catch (e) { /* egal */ }
+  updateNameUi();
+  closeSettings();
+}
+
+async function clearHistory() {
+  const ok = await confirmDialog({
+    title: 'Verlauf leeren?',
+    text: 'Alle Aufnahmen im Verlauf werden von diesem Handy gelöscht. Bereits heruntergeladene Dateien bleiben erhalten.',
+    ok: 'Leeren',
+    cancel: 'Zurück',
+    danger: true,
+  });
+  if (!ok) return;
+  await HistoryStore.clear().catch(() => {});
+  el.settingsStorage.textContent = `Aufnahmen werden ${HistoryStore.KEEP_DAYS} Tage lang nur auf diesem Handy gespeichert. Der Verlauf ist leer.`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Verlauf                                                             */
+/* ------------------------------------------------------------------ */
+
+let historyUrls = [];
+
+function dayLabel(d) {
+  const today = new Date();
+  const start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(today) - start(d)) / 86400000);
+  if (diff === 0) return 'Heute';
+  if (diff === 1) return 'Gestern';
+  return d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function showHistory(push = true) {
+  if (push) history.pushState({ view: 'history' }, '');
+  show(el.viewHistory);
+  renderHistory();
+}
+
+async function renderHistory() {
+  for (const u of historyUrls) URL.revokeObjectURL(u);
+  historyUrls = [];
+  const list = el.historyList;
+  let entries = [];
+  try {
+    entries = (await HistoryStore.all()).sort((a, b) => b.createdAt - a.createdAt);
+  } catch (e) {
+    console.warn(e);
+  }
+  list.innerHTML = '';
+  if (!entries.length) {
+    list.innerHTML = '<div class="history-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l3.9 3.9L8.8 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></svg>' +
+      '<div class="history-empty-title">Noch keine Aufnahmen</div><div>Fotos, Videos und Serien erscheinen hier automatisch.</div></div>';
+    return;
+  }
+  let lastDay = '';
+  for (const e of entries) {
+    const d = new Date(e.createdAt);
+    const day = dayLabel(d);
+    if (day !== lastDay) {
+      const h = document.createElement('div');
+      h.className = 'history-day';
+      h.textContent = day;
+      list.appendChild(h);
+      lastDay = day;
+    }
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    row.setAttribute('role', 'button');
+    row.tabIndex = 0;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'history-thumb';
+    if (e.thumb) {
+      const url = URL.createObjectURL(e.thumb);
+      historyUrls.push(url);
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      thumb.appendChild(img);
+    }
+    if (e.kind === 'video' || !e.thumb) {
+      const ic = document.createElement('span');
+      ic.className = 'history-kind-icon';
+      ic.innerHTML = e.kind === 'video'
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9z"/></svg>';
+      thumb.appendChild(ic);
+    }
+    if (e.kind === 'series') {
+      const n = document.createElement('span');
+      n.className = 'history-count';
+      n.textContent = String(e.count);
+      thumb.appendChild(n);
+    }
+
+    const text = document.createElement('div');
+    text.className = 'history-text';
+    const title = document.createElement('div');
+    title.className = 'history-title';
+    title.textContent = e.kind === 'series' ? `Serie · ${e.count} ${e.count === 1 ? 'Foto' : 'Fotos'}` : KIND_LABEL[e.kind] || 'Aufnahme';
+    const sub = document.createElement('div');
+    sub.className = 'history-sub';
+    sub.textContent = [`${pad2(d.getHours())}:${pad2(d.getMinutes())} Uhr`, e.address ? oneLine(e.address) : ''].filter(Boolean).join(' · ');
+    text.append(title, sub);
+    if (e.note) {
+      const note = document.createElement('div');
+      note.className = 'history-note';
+      note.textContent = e.note;
+      text.appendChild(note);
+    }
+
+    const del = document.createElement('button');
+    del.className = 'history-del';
+    del.setAttribute('aria-label', 'Aus dem Verlauf löschen');
+    del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>';
+    del.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const ok = await confirmDialog({
+        title: 'Eintrag löschen?',
+        text: `${title.textContent} vom ${formatShortDate(d)} wird aus dem Verlauf gelöscht. Bereits heruntergeladene Dateien bleiben erhalten.`,
+        ok: 'Löschen',
+        cancel: 'Zurück',
+        danger: true,
+      });
+      if (!ok) return;
+      await HistoryStore.remove(e.id).catch(() => {});
+      renderHistory();
+    });
+
+    row.append(thumb, text, del);
+    row.addEventListener('click', () => openHistoryEntry(e.id));
+    list.appendChild(row);
+  }
+}
+
+async function openHistoryEntry(id) {
+  let entry = null;
+  try { entry = await HistoryStore.get(id); } catch (e) { /* unten */ }
+  if (!entry || !entry.items || !entry.items.length) {
+    alert('Dieser Eintrag konnte nicht geladen werden.');
+    renderHistory();
+    return;
+  }
+  const items = entry.items.map(HistoryStore.fromStored);
+  history.pushState({ view: 'result' }, '');
+  if (entry.kind === 'series') {
+    discardSeries();
+    state.series = items;
+    state.seriesNo = items.length;
+    state.seriesSaved = true;
+    state.seriesEntryId = entry.id;
+    showResults('series', state.series, { entryId: entry.id, fromHistory: true });
+  } else {
+    showResults(entry.kind, items, { entryId: entry.id, fromHistory: true });
   }
 }
 
@@ -2616,8 +3074,23 @@ on(el.btnShare, shareResults);
 on(el.btnPdf, pdfResults);
 on(el.btnZip, zipResults);
 on(el.btnNew, newShot);
-on(el.resultImg, () => { if (state.shown) openViewer([state.shown.items[0].url]); });
-on(el.zoomHint, () => { if (state.shown) openViewer([state.shown.items[0].url]); });
+on(el.btnHistory, () => showHistory(true));
+on(el.historyBack, goBack);
+on(el.btnSettings, openSettings);
+on(el.nameRow, openSettings);
+on(el.settingsClose, closeSettings);
+on(el.settingsSave, saveSettings);
+on(el.settingsClear, clearHistory);
+on(el.settings, (e) => { if (e.target === el.settings) closeSettings(); });
+on(el.dialogInput, (e) => { if (e.key === 'Enter') closeDialog(true); }, 'keydown');
+setupSheetDrag(el.settingsPanel, el.settingsGrab, () => closeSettings());
+Editor.setup();
+updateNameUi();
+HistoryStore.prune().catch(() => {});
+on(el.resultImg, () => { if (state.shown) openViewer([state.shown.items[0].url], 0, state.shown.items); });
+on(el.zoomHint, () => { if (state.shown) openViewer([state.shown.items[0].url], 0, state.shown.items); });
+on(el.viewerEdit, () => { if (viewer.items) annotateItem(viewer.items[viewer.index]); });
+on(el.btnAnnotate, () => { if (state.shown) annotateItem(state.shown.items[0]); });
 on(el.viewerClose, closeViewer);
 on(el.viewerPrev, () => viewerStep(-1));
 on(el.viewerNext, () => viewerStep(1));
@@ -2649,7 +3122,7 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => { updateGpsUi(); updateTimeUi(); }, 5000);
 
 /* Startseite automatisch einpassen: so lange kompakter, bis nichts mehr übersteht */
-let fitFrame = null;
+var fitFrame = null; // var: wird schon vor dieser Stelle (beim Start) benötigt
 function fitStartPage() {
   if (fitFrame) return;
   fitFrame = requestAnimationFrame(() => {
