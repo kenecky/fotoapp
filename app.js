@@ -552,6 +552,8 @@ function updateZoomUi() {
     b.classList.toggle('active', b === active);
     const showCurrent = b === active && b.dataset.lens === 'main' && Math.abs(z - state.zoom) > 0.05;
     b.textContent = showCurrent ? formatZoom(state.zoom) : formatZoom(z);
+    // Während einer Videoaufnahme kann nicht auf ein anderes Objektiv gewechselt werden
+    b.disabled = !!state.rec && b.dataset.lens !== state.lens;
   }
 }
 
@@ -1966,7 +1968,7 @@ function setRecordingUi(on) {
   el.btnDetails.disabled = on;
   el.addrBtn.disabled = on;
   el.noteChip.disabled = on;
-  el.zoomBar.classList.toggle('locked', on);
+  updateZoomUi(); // während der Aufnahme nur Objektivwechsel sperren
 }
 
 async function startRecording() {
@@ -2148,7 +2150,16 @@ function renderResults() {
       del.className = 'grid-del';
       del.setAttribute('aria-label', `Foto ${i + 1} entfernen`);
       del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>';
-      del.addEventListener('click', () => removeSeriesItem(it));
+      del.addEventListener('click', async () => {
+        const ok = await confirmDialog({
+          title: `Foto ${i + 1} löschen?`,
+          text: 'Das Foto wird aus der Serie entfernt. Das kann nicht rückgängig gemacht werden.',
+          ok: 'Löschen',
+          cancel: 'Zurück',
+          danger: true,
+        });
+        if (ok) removeSeriesItem(it);
+      });
       img.addEventListener('click', () => openViewer(items.map((x) => x.url), i));
       cell.append(img, num, del);
       el.resultGrid.appendChild(cell);

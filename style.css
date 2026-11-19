@@ -965,10 +965,10 @@ button { font-family: inherit; }
 }
 .grid-del {
   position: absolute;
-  right: 6px;
-  top: 6px;
-  width: 30px;
-  height: 30px;
+  right: 4px;
+  top: 4px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
   background: rgba(15,23,42,.7);
@@ -977,7 +977,11 @@ button { font-family: inherit; }
   justify-content: center;
   cursor: pointer;
 }
-.grid-del svg { width: 16px; height: 16px; fill: #fff; }
+.grid-del svg { width: 24px; height: 24px; fill: #fff; }
+.grid-del::after { content: ""; position: absolute; inset: -6px; } /* noch größere Trefferfläche */
+.grid-del:active { background: rgba(239,68,68,.9); }
+.grid-num { left: 10px; top: 10px; min-width: 28px; height: 28px; line-height: 28px; font-size: 13px; }
+.zoom-btn:disabled { opacity: .3; }
 
 .btn:disabled { opacity: .5; }
 
