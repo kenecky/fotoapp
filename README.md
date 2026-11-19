@@ -1,8 +1,13 @@
 # FotoApp
 
-Web-App (PWA) für Android: Foto aufnehmen und automatisch mit **Datum/Uhrzeit**,
-**GPS-Koordinaten** (mit Genauigkeit) und **Adresse** stempeln. Das fertige Bild
-wird angezeigt und kann heruntergeladen oder geteilt werden.
+Web-App (PWA) für Android: Fotos und Videos aufnehmen und automatisch mit
+**Datum/Uhrzeit**, **GPS-Koordinaten** (mit Genauigkeit) und **Adresse** stempeln.
+Das Ergebnis wird angezeigt und kann heruntergeladen oder geteilt werden.
+
+- **Foto:** Stempel wird beim Auslösen ins Bild geschrieben.
+- **Video:** mit Ton, max. 2 Minuten, Full HD. Der Stempel läuft live mit
+  (Uhrzeit sekundengenau, Koordinaten/Adresse aktualisieren sich bei Bewegung).
+  Wird die App während der Aufnahme verlassen, wird das Video beendet und gespeichert.
 
 - Keine Anmeldung, kein Server, keine Datenspeicherung online.
 - Für die Adresse wird nur die GPS-Position an OpenStreetMap (Nominatim) gesendet.

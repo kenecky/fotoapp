@@ -1,53 +1,64 @@
 'use strict';
 
 /*
- * FotoApp – Foto aufnehmen und mit Zeitstempel, GPS-Koordinaten und Adresse stempeln.
+ * FotoApp – Fotos und Videos aufnehmen und mit Zeitstempel, GPS-Koordinaten und Adresse stempeln.
  * Alles passiert im Browser. Es werden keine Daten auf einem Server gespeichert.
  * Für die Adresse wird nur die Position an OpenStreetMap (Nominatim) geschickt.
  */
 
 const CONFIG = {
   jpegQuality: 0.92,
-  gpsTimeoutMs: 8000,        // so lange wird beim Auslösen höchstens auf GPS gewartet
+  gpsTimeoutMs: 8000,        // so lange wird beim Foto höchstens auf GPS gewartet
   maxPositionAgeMs: 30000,   // ältere Positionen gelten als veraltet
   addressTimeoutMs: 6000,
   addressReuseMeters: 30,    // bereits ermittelte Adresse wiederverwenden, wenn so nah
   addressMinIntervalMs: 10000,
+  videoMaxSeconds: 120,      // Höchstlänge eines Videos
+  videoFps: 30,
+  videoBitsPerSecond: 5000000,
+  audioBitsPerSecond: 128000,
 };
 
 const $ = (id) => document.getElementById(id);
 const el = {
   viewStart: $('view-start'),
-  btnOpenCamera: $('btn-open-camera'),
-  startGps: $('start-gps'),
-  startAddr: $('start-addr'),
-  btnBack: $('btn-back'),
-  btnHome: $('btn-home'),
   viewCamera: $('view-camera'),
   viewBusy: $('view-busy'),
   viewResult: $('view-result'),
+  btnOpenPhoto: $('btn-open-photo'),
+  btnOpenVideo: $('btn-open-video'),
+  startGps: $('start-gps'),
+  startAddr: $('start-addr'),
+  btnBack: $('btn-back'),
   video: $('video'),
   gpsChip: $('gps-chip'),
   addrLine: $('addr-line'),
   camMessage: $('cam-message'),
+  recInfo: $('rec-info'),
+  recTime: $('rec-time'),
   shutter: $('btn-shutter'),
   busyText: $('busy-text'),
   resultImg: $('result-img'),
+  resultVideo: $('result-video'),
   btnDownload: $('btn-download'),
   btnShare: $('btn-share'),
   btnNew: $('btn-new'),
+  btnHome: $('btn-home'),
   canvas: $('canvas'),
 };
 
 const state = {
+  mode: 'photo',           // 'photo' | 'video'
   stream: null,
+  hasAudio: false,
   watchId: null,
   position: null,          // letzte GeolocationPosition
   gpsError: null,
   address: null,           // { lat, lon, text, time }
   addressPending: null,
   lastAddressRequest: 0,
-  result: null,            // { blob, url, filename }
+  rec: null,               // laufende Videoaufnahme
+  result: null,            // { blob, url, filename, kind }
 };
 
 /* ------------------------------------------------------------------ */
@@ -58,6 +69,10 @@ function show(view) {
   for (const v of [el.viewStart, el.viewCamera, el.viewBusy, el.viewResult]) {
     v.classList.toggle('hidden', v !== view);
   }
+}
+
+function isVisible(view) {
+  return !view.classList.contains('hidden');
 }
 
 function showCameraMessage(text) {
@@ -79,24 +94,43 @@ async function startCamera() {
     showCameraMessage('Dieser Browser unterstützt keinen Kamerazugriff. Bitte Chrome verwenden.');
     return;
   }
+
+  const isVideo = state.mode === 'video';
+  const videoConstraints = {
+    facingMode: { ideal: 'environment' },
+    // Foto: so hoch wie möglich. Video: Full HD, damit die Aufnahme flüssig bleibt.
+    width: { ideal: isVideo ? 1920 : 4096 },
+    height: { ideal: isVideo ? 1080 : 4096 },
+  };
+
   try {
-    state.stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 4096 },
-        height: { ideal: 4096 },
-      },
-    });
-    el.video.srcObject = state.stream;
+    let stream;
+    let note = '';
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: isVideo });
+    } catch (err) {
+      if (!isVideo || err.name !== 'NotAllowedError' && err.name !== 'NotFoundError') throw err;
+      // Mikrofon nicht erlaubt oder nicht vorhanden: Video ohne Ton
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      note = 'Mikrofon nicht verfügbar – Video wird ohne Ton aufgenommen.';
+    }
+    // Ansicht wurde inzwischen verlassen
+    if (!isVisible(el.viewCamera)) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    state.stream = stream;
+    state.hasAudio = stream.getAudioTracks().length > 0;
+    el.video.srcObject = stream;
     await el.video.play().catch(() => {});
-    showCameraMessage('');
+    showCameraMessage(note);
+    if (note) setTimeout(() => { if (el.camMessage.textContent === note) showCameraMessage(''); }, 4000);
     el.shutter.disabled = false;
   } catch (err) {
     console.error(err);
     el.shutter.disabled = true;
     if (err.name === 'NotAllowedError') {
-      showCameraMessage('Kein Zugriff auf die Kamera. Bitte in den Chrome-Einstellungen die Kamera für diese Seite erlauben und neu laden.');
+      showCameraMessage('Kein Zugriff auf die Kamera. Bitte in den Chrome-Einstellungen Kamera (und für Videos Mikrofon) für diese Seite erlauben und neu laden.');
     } else if (err.name === 'NotFoundError') {
       showCameraMessage('Keine Kamera gefunden.');
     } else {
@@ -176,7 +210,7 @@ function updateGpsUi() {
   el.startAddr.textContent = addr;
 }
 
-/** Wartet beim Auslösen kurz auf eine aktuelle Position, falls noch keine da ist. */
+/** Wartet beim Foto kurz auf eine aktuelle Position, falls noch keine da ist. */
 function getPositionForPhoto() {
   const p = freshPosition();
   if (p) return Promise.resolve(p);
@@ -244,7 +278,7 @@ async function fetchAddress(lat, lon) {
   }
 }
 
-/** Holt die Adresse schon während der Vorschau, damit das Auslösen schnell geht. */
+/** Holt die Adresse schon vorab (und während eines Videos laufend nach). */
 function prefetchAddress(pos) {
   const { latitude: lat, longitude: lon, accuracy } = pos.coords;
   if (accuracy > 200 || !navigator.onLine) return;
@@ -269,7 +303,7 @@ async function getAddressForPhoto(pos) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Foto aufnehmen und stempeln                                         */
+/* Stempel                                                             */
 /* ------------------------------------------------------------------ */
 
 function pad2(n) { return String(n).padStart(2, '0'); }
@@ -317,7 +351,13 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function drawStamp(ctx, w, h, info) {
+/**
+ * Zeichnet den Stempel (halbtransparenter Balken mit Text) auf eine eigene Fläche
+ * in voller Bildbreite. Sie wird dann unten ins Foto bzw. in jedes Videobild gesetzt.
+ */
+function renderStamp(w, h, info, target) {
+  const canvas = target || document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
   const base = Math.min(w, h);
   const fontSize = Math.max(14, Math.round(base * 0.032));
   const lineHeight = Math.round(fontSize * 1.3);
@@ -334,8 +374,10 @@ function drawStamp(ctx, w, h, info) {
   if (info.coords) {
     for (const l of wrapText(ctx, info.coords, maxWidth)) rows.push([l, false, '#ffffff']);
   } else {
+    ctx.font = `700 ${fontSize}px ${family}`;
     for (const l of wrapText(ctx, 'Kein Standort verfügbar', maxWidth)) rows.push([l, true, '#ffb4ab']);
   }
+  ctx.font = `400 ${fontSize}px ${family}`;
   if (info.address) {
     for (const l of wrapText(ctx, info.address, maxWidth)) rows.push([l, false, '#ffffff']);
   } else if (info.coords) {
@@ -343,21 +385,27 @@ function drawStamp(ctx, w, h, info) {
   }
 
   const boxHeight = rows.length * lineHeight + pad * 2;
+  canvas.width = w;
+  canvas.height = boxHeight; // setzt auch den Zeichenzustand zurück
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-  ctx.fillRect(0, h - boxHeight, w, boxHeight);
+  ctx.fillRect(0, 0, w, boxHeight);
 
   ctx.textBaseline = 'top';
   ctx.shadowColor = 'rgba(0,0,0,0.6)';
   ctx.shadowBlur = Math.round(fontSize * 0.15);
-  let y = h - boxHeight + pad + Math.round((lineHeight - fontSize) / 2);
+  let y = pad + Math.round((lineHeight - fontSize) / 2);
   for (const [text, bold, color] of rows) {
     ctx.font = `${bold ? 700 : 400} ${fontSize}px ${family}`;
     ctx.fillStyle = color;
     ctx.fillText(text, pad, y);
     y += lineHeight;
   }
-  ctx.shadowBlur = 0;
+  return canvas;
 }
+
+/* ------------------------------------------------------------------ */
+/* Foto                                                                */
+/* ------------------------------------------------------------------ */
 
 function canvasToBlob(canvas) {
   return new Promise((resolve, reject) => {
@@ -392,17 +440,16 @@ async function takePhoto() {
 
     // 3. Stempel zeichnen
     el.busyText.textContent = 'Foto wird gespeichert …';
-    drawStamp(ctx, w, h, {
+    const stamp = renderStamp(w, h, {
       timestamp: formatTimestamp(takenAt),
       coords: pos ? formatCoords(pos) : null,
       address,
     });
+    ctx.drawImage(stamp, 0, h - stamp.height);
 
     const blob = await canvasToBlob(canvas);
-    setResult(blob, `Foto_${fileTimestamp(takenAt)}.jpg`);
     stopCamera(); // Akku sparen, solange das Ergebnis angezeigt wird
-    history.replaceState({ view: 'result' }, '');
-    show(el.viewResult);
+    showResult(blob, `Foto_${fileTimestamp(takenAt)}.jpg`, 'photo');
   } catch (err) {
     console.error(err);
     alert('Fehler beim Erstellen des Fotos: ' + err.message);
@@ -412,23 +459,200 @@ async function takePhoto() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Video                                                               */
+/* ------------------------------------------------------------------ */
+
+function pickVideoMimeType() {
+  const candidates = [
+    'video/mp4;codecs=avc1.42E01F,mp4a.40.2',
+    'video/mp4;codecs=avc1,mp4a.40.2',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+  ];
+  if (!window.MediaRecorder) return null;
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+}
+
+/** Stempel-Daten für den aktuellen Moment eines Videos. */
+function liveStampInfo(now) {
+  const pos = freshPosition();
+  let address = null;
+  if (pos) {
+    const a = cachedAddressFor(pos.coords.latitude, pos.coords.longitude);
+    address = a ? a.text : null;
+  }
+  return {
+    timestamp: formatTimestamp(now),
+    coords: pos ? formatCoords(pos) : null,
+    address,
+  };
+}
+
+function formatDuration(sec) {
+  return `${pad2(Math.floor(sec / 60))}:${pad2(Math.floor(sec % 60))}`;
+}
+
+async function startRecording() {
+  const video = el.video;
+  if (!state.stream || !video.videoWidth || state.rec) return;
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
+    alert('Dieser Browser kann keine Videos aufnehmen. Bitte Chrome aktualisieren.');
+    return;
+  }
+
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  const canvas = el.canvas;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+
+  const rec = {
+    startedAt: new Date(),
+    w, h, ctx,
+    stampCanvas: document.createElement('canvas'),
+    stampKey: '',
+    chunks: [],
+    recorder: null,
+    timer: null,
+    wakeLock: null,
+    stopping: false,
+  };
+
+  // Bildschleife: Kamerabild + Stempel in das Canvas zeichnen
+  const drawFrame = () => {
+    if (state.rec !== rec || rec.stopping) return;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw && vh) {
+      // Falls das Handy während der Aufnahme gedreht wird: Bild einpassen
+      const scale = Math.min(w / vw, h / vh);
+      const dw = vw * scale;
+      const dh = vh * scale;
+      if (dw < w || dh < h) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    }
+    const info = liveStampInfo(new Date());
+    const key = info.timestamp + '|' + info.coords + '|' + info.address;
+    if (key !== rec.stampKey) {
+      renderStamp(w, h, info, rec.stampCanvas);
+      rec.stampKey = key;
+    }
+    ctx.drawImage(rec.stampCanvas, 0, h - rec.stampCanvas.height);
+    scheduleFrame();
+  };
+  const scheduleFrame = () => {
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(drawFrame);
+    else requestAnimationFrame(drawFrame);
+  };
+
+  state.rec = rec;
+  drawFrame();
+
+  // Aufnahme-Stream: Canvas-Bild + Mikrofon-Ton
+  const out = canvas.captureStream(CONFIG.videoFps);
+  for (const t of state.stream.getAudioTracks()) out.addTrack(t);
+
+  const mimeType = pickVideoMimeType();
+  try {
+    rec.recorder = new MediaRecorder(out, {
+      ...(mimeType ? { mimeType } : {}),
+      videoBitsPerSecond: CONFIG.videoBitsPerSecond,
+      audioBitsPerSecond: CONFIG.audioBitsPerSecond,
+    });
+  } catch (err) {
+    console.error(err);
+    state.rec = null;
+    alert('Videoaufnahme konnte nicht gestartet werden: ' + err.message);
+    return;
+  }
+
+  rec.recorder.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+  rec.recorder.onstop = () => finishRecording(rec);
+  rec.recorder.start(1000);
+
+  // Bildschirm während der Aufnahme anlassen
+  try {
+    if (navigator.wakeLock) rec.wakeLock = await navigator.wakeLock.request('screen');
+  } catch (e) { /* nicht schlimm */ }
+
+  // Anzeige: Aufnahmezeit, automatischer Stopp nach Höchstlänge
+  el.viewCamera.classList.add('recording');
+  el.recInfo.classList.remove('hidden');
+  el.btnBack.disabled = true;
+  const tick = () => {
+    const sec = (Date.now() - rec.startedAt.getTime()) / 1000;
+    el.recTime.textContent = `${formatDuration(sec)} / ${formatDuration(CONFIG.videoMaxSeconds)}`;
+    if (sec >= CONFIG.videoMaxSeconds) stopRecording();
+  };
+  tick();
+  rec.timer = setInterval(tick, 250);
+}
+
+function stopRecording() {
+  const rec = state.rec;
+  if (!rec || rec.stopping) return;
+  rec.stopping = true;
+  clearInterval(rec.timer);
+  el.recInfo.classList.add('hidden');
+  el.viewCamera.classList.remove('recording');
+  el.btnBack.disabled = false;
+  if (rec.wakeLock) rec.wakeLock.release().catch(() => {});
+  el.busyText.textContent = 'Video wird gespeichert …';
+  show(el.viewBusy);
+  if (rec.recorder && rec.recorder.state !== 'inactive') rec.recorder.stop();
+  else finishRecording(rec);
+}
+
+function finishRecording(rec) {
+  if (state.rec !== rec) return;
+  state.rec = null;
+  stopCamera();
+  if (!rec.chunks.length) {
+    alert('Das Video ist leer und konnte nicht gespeichert werden.');
+    showStart();
+    return;
+  }
+  const type = (rec.recorder && rec.recorder.mimeType) || rec.chunks[0].type || 'video/webm';
+  const blob = new Blob(rec.chunks, { type: type.split(';')[0] });
+  const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+  showResult(blob, `Video_${fileTimestamp(rec.startedAt)}.${ext}`, 'video');
+}
+
+/* ------------------------------------------------------------------ */
 /* Ergebnis: anzeigen, herunterladen, teilen                           */
 /* ------------------------------------------------------------------ */
 
-function setResult(blob, filename) {
+function showResult(blob, filename, kind) {
   clearResult();
   const url = URL.createObjectURL(blob);
-  state.result = { blob, url, filename };
-  el.resultImg.src = url;
-  const file = new File([blob], filename, { type: 'image/jpeg' });
+  state.result = { blob, url, filename, kind };
+  el.resultImg.classList.toggle('hidden', kind !== 'photo');
+  el.resultVideo.classList.toggle('hidden', kind !== 'video');
+  if (kind === 'photo') el.resultImg.src = url;
+  else el.resultVideo.src = url;
+  el.btnNew.textContent = kind === 'photo' ? 'Neues Foto' : 'Neues Video';
+
+  const file = new File([blob], filename, { type: blob.type });
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
   el.btnShare.classList.toggle('hidden', !canShare);
+
+  history.replaceState({ view: 'result' }, '');
+  show(el.viewResult);
 }
 
 function clearResult() {
   if (state.result) URL.revokeObjectURL(state.result.url);
   state.result = null;
   el.resultImg.removeAttribute('src');
+  el.resultVideo.pause();
+  el.resultVideo.removeAttribute('src');
+  el.resultVideo.load();
 }
 
 function downloadResult() {
@@ -443,29 +667,39 @@ function downloadResult() {
 
 async function shareResult() {
   if (!state.result) return;
-  const file = new File([state.result.blob], state.result.filename, { type: 'image/jpeg' });
+  const { blob, filename } = state.result;
+  const file = new File([blob], filename, { type: blob.type });
   try {
-    await navigator.share({ files: [file], title: state.result.filename });
+    await navigator.share({ files: [file], title: filename });
   } catch (err) {
     if (err.name !== 'AbortError') alert('Teilen nicht möglich: ' + err.message);
   }
-}
-
-function newPhoto() {
-  clearResult();
-  history.replaceState({ view: 'camera' }, '');
-  show(el.viewCamera);
-  startCamera();
 }
 
 /* ------------------------------------------------------------------ */
 /* Navigation (Startseite <-> Kamera, inkl. Android-Zurück-Taste)       */
 /* ------------------------------------------------------------------ */
 
-function openCamera() {
-  history.pushState({ view: 'camera' }, '');
+function enterCamera(mode) {
+  if (state.mode !== mode) stopCamera(); // Video braucht zusätzlich das Mikrofon
+  state.mode = mode;
+  el.viewCamera.classList.toggle('mode-video', mode === 'video');
+  el.shutter.setAttribute('aria-label', mode === 'video' ? 'Aufnahme starten/stoppen' : 'Foto aufnehmen');
+  showCameraMessage('');
   show(el.viewCamera);
   startCamera();
+}
+
+function openCamera(mode) {
+  history.pushState({ view: 'camera' }, '');
+  enterCamera(mode);
+}
+
+function newShot() {
+  const mode = state.result ? state.result.kind : state.mode;
+  clearResult();
+  history.replaceState({ view: 'camera' }, '');
+  enterCamera(mode);
 }
 
 function showStart() {
@@ -481,42 +715,52 @@ function goBack() {
 }
 
 window.addEventListener('popstate', () => {
-  if (!el.viewBusy.classList.contains('hidden')) {
-    // Während der Verarbeitung nicht wegnavigieren
+  if (state.rec || isVisible(el.viewBusy)) {
+    // Während Aufnahme/Verarbeitung nicht wegnavigieren; laufende Aufnahme wird beendet und gespeichert
     history.pushState({ view: 'camera' }, '');
+    stopRecording();
     return;
   }
   showStart();
 });
 
+function onShutter() {
+  if (state.mode === 'photo') takePhoto();
+  else if (state.rec) stopRecording();
+  else startRecording();
+}
+
 /* ------------------------------------------------------------------ */
 /* Start                                                               */
 /* ------------------------------------------------------------------ */
 
-el.btnOpenCamera.addEventListener('click', openCamera);
+el.btnOpenPhoto.addEventListener('click', () => openCamera('photo'));
+el.btnOpenVideo.addEventListener('click', () => openCamera('video'));
 el.btnBack.addEventListener('click', goBack);
 el.btnHome.addEventListener('click', goBack);
-el.shutter.addEventListener('click', takePhoto);
+el.shutter.addEventListener('click', onShutter);
 el.btnDownload.addEventListener('click', downloadResult);
 el.btnShare.addEventListener('click', shareResult);
-el.btnNew.addEventListener('click', newPhoto);
+el.btnNew.addEventListener('click', newShot);
 history.replaceState({ view: 'start' }, '');
 
-// Kamera und GPS pausieren, wenn die App im Hintergrund ist
+// Kamera und GPS pausieren, wenn die App im Hintergrund ist.
+// Eine laufende Videoaufnahme wird dabei beendet und gespeichert.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    stopCamera();
+    if (state.rec) stopRecording();
+    else stopCamera();
     stopGps();
   } else {
     startGps();
-    if (!el.viewCamera.classList.contains('hidden')) startCamera();
+    if (isVisible(el.viewCamera)) startCamera();
   }
 });
 
 // Anzeige regelmäßig aktualisieren (z. B. wenn die Position veraltet)
 setInterval(updateGpsUi, 5000);
 
-// GPS läuft schon auf der Startseite, damit beim Foto sofort ein Standort da ist
+// GPS läuft schon auf der Startseite, damit beim Auslösen sofort ein Standort da ist
 startGps();
 
 if ('serviceWorker' in navigator) {
