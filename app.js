@@ -2668,13 +2668,13 @@ let dialogInputMode = false;
 /**
  * Fenster im Stil der App. Liefert true/false – oder mit „input“ den eingegebenen Text (bzw. null).
  */
-function confirmDialog({ title, text, ok = 'OK', cancel = 'Abbrechen', danger = false, input = null, icon = 'warn' }) {
+function confirmDialog({ title, text, ok = 'OK', cancel = 'Abbrechen', danger = false, input = null, inputValue = '', icon = 'warn' }) {
   if (dialogResolve) dialogResolve(dialogInputMode ? null : false);
   dialogInputMode = input !== null;
   el.dialogIconPath.setAttribute('d', DIALOG_ICONS[icon] || DIALOG_ICONS.warn);
   el.dialogIcon.classList.toggle('dialog-icon-edit', icon === 'edit');
   el.dialogInput.classList.toggle('hidden', !dialogInputMode);
-  el.dialogInput.value = '';
+  el.dialogInput.value = inputValue || '';
   el.dialogInput.placeholder = dialogInputMode ? input : '';
   if (dialogInputMode) setTimeout(() => el.dialogInput.focus(), 60);
   el.dialogTitle.textContent = title;
@@ -2693,7 +2693,7 @@ function closeDialog(result) {
   const r = dialogResolve;
   dialogResolve = null;
   if (el.dialogInput === document.activeElement) el.dialogInput.blur();
-  if (r) r(dialogInputMode ? (result ? el.dialogInput.value.trim() || null : null) : result);
+  if (r) r(dialogInputMode ? (result ? el.dialogInput.value.trim() : null) : result);
 }
 
 /** Wurde eine Serie noch nicht gespeichert oder geteilt? */
