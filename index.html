@@ -7,7 +7,7 @@
   <title>Hier &amp; Jetzt</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <!-- Startseite -->
@@ -38,6 +38,18 @@
         </span>
         <svg class="menu-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 5.3 7.9 6.7 13.2 12l-5.3 5.3 1.4 1.4L16 12z"/></svg>
       </button>
+
+      <button id="btn-open-compare" class="menu-btn">
+        <span class="menu-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v16H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm9-2h2v20h-2zm4 2h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3v-2h2V6h-2z"/></svg>
+        </span>
+        <span class="menu-text">
+          <span class="menu-title">Vorher / Nachher</span>
+          <span class="menu-sub">Vorher aus Galerie, Nachher live</span>
+        </span>
+        <svg class="menu-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 5.3 7.9 6.7 13.2 12l-5.3 5.3 1.4 1.4L16 12z"/></svg>
+      </button>
+      <input id="before-input" type="file" accept="image/*" hidden>
     </div>
 
     <div class="start-footer">
@@ -49,13 +61,15 @@
         </div>
       </div>
       <div id="start-error" class="start-error hidden"></div>
-      <div class="start-version">Version 6</div>
+      <div class="start-version">Version 7</div>
     </div>
   </section>
 
   <!-- Kamera-Ansicht -->
   <section id="view-camera" class="view hidden">
     <video id="video" autoplay playsinline muted></video>
+    <img id="ghost" class="ghost hidden" alt="">
+    <div id="focus-ring" class="focus-ring hidden"></div>
 
     <div class="status">
       <button id="btn-back" class="glass-btn" aria-label="Zurück zur Startseite">
@@ -63,17 +77,76 @@
       </button>
       <div class="status-text">
         <div id="gps-chip" class="chip chip-wait">GPS wird gesucht …</div>
-        <div id="addr-line" class="addr"></div>
+        <button id="addr-btn" class="addr-btn" aria-label="Adresse ändern">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+          <span id="addr-line" class="addr"></span>
+          <span class="addr-edit">ändern</span>
+        </button>
+        <button id="note-chip" class="note-chip hidden" aria-label="Notiz ändern">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          <span id="note-text"></span>
+        </button>
       </div>
+      <button id="btn-torch" class="glass-btn hidden" aria-label="Taschenlampe">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h12v3H6zm0 5h12l-3 5v10H9V12L6 7zm6 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>
+      </button>
     </div>
 
     <div id="cam-message" class="message hidden"></div>
 
     <div class="controls">
+      <div id="compare-banner" class="pill hidden">Nachher-Foto aufnehmen</div>
       <div id="rec-info" class="rec-info hidden"><span class="rec-dot"></span><span id="rec-time">00:00 / 02:00</span></div>
-      <button id="btn-shutter" class="shutter" aria-label="Foto aufnehmen" disabled><span class="shutter-inner"></span></button>
+      <div id="zoom-bar" class="zoom-bar hidden"></div>
+      <div class="control-row">
+        <div class="side">
+          <button id="btn-details" class="glass-btn glass-lg" aria-label="Adresse und Notiz">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+        </div>
+        <button id="btn-shutter" class="shutter" aria-label="Foto aufnehmen" disabled><span class="shutter-inner"></span></button>
+        <div class="side">
+          <button id="btn-ghost" class="ghost-btn hidden" aria-label="Vorher-Bild ein-/ausblenden">
+            <img id="ghost-thumb" alt="">
+            <span class="ghost-label">Vorher</span>
+          </button>
+        </div>
+      </div>
     </div>
   </section>
+
+  <!-- Adresse & Notiz -->
+  <div id="sheet" class="sheet-backdrop hidden">
+    <div class="sheet" role="dialog" aria-label="Adresse und Notiz">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Adresse &amp; Notiz</h2>
+        <button id="sheet-close" class="icon-btn" aria-label="Schließen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="sheet-label">Adresse</div>
+        <div id="addr-list"></div>
+        <div id="addr-status" class="addr-status"></div>
+        <div id="manual-row" class="manual-row">
+          <input id="addr-manual" class="input" type="text" autocomplete="off" placeholder="Andere Adresse eingeben …">
+        </div>
+
+        <div class="sheet-label">Notiz</div>
+        <div class="input-wrap">
+          <input id="note-input" class="input" type="text" maxlength="80" autocomplete="off" placeholder="z. B. Treppenhaus gereinigt">
+          <button id="note-clear" class="input-clear" aria-label="Notiz löschen">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 7.1 16.9 5.7 12 10.6 7.1 5.7 5.7 7.1l4.9 4.9-4.9 4.9 1.4 1.4 4.9-4.9 4.9 4.9 1.4-1.4-4.9-4.9z"/></svg>
+          </button>
+        </div>
+        <div id="note-recent" class="note-recent"></div>
+      </div>
+      <div class="sheet-foot">
+        <button id="sheet-apply" class="btn btn-primary">Übernehmen</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Verarbeitung -->
   <section id="view-busy" class="view hidden">
@@ -105,6 +178,7 @@
   </section>
 
   <canvas id="canvas" class="hidden"></canvas>
-  <script src="app.js?v=6"></script>
+  <script src="exif.js?v=7"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

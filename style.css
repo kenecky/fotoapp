@@ -430,3 +430,356 @@ button { font-family: inherit; }
   font-weight: 700;
   box-shadow: var(--shadow-accent);
 }
+
+/* ================================================================== */
+/* Version 7: Adresse & Notiz, Vorher/Nachher, Kamera-Steuerung        */
+/* ================================================================== */
+
+/* Startseite mit drei Buttons etwas kompakter */
+.start-logo { width: 84px; height: 84px; border-radius: 22px; }
+.start-title { margin-top: 16px; }
+.start-sub { margin-bottom: 28px; }
+.menu-btn + .menu-btn { margin-top: 14px; }
+
+/* ---------- Kamera: Adresse, Notiz, Taschenlampe ---------- */
+
+.addr-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+  font-size: 14px;
+}
+.addr-btn svg { width: 16px; height: 16px; fill: #fff; flex: none; margin-top: 1px; }
+.addr-btn .addr { margin-top: 0; }
+.addr-edit {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.addr-btn.chosen svg { fill: #7DD3FC; }
+.addr-btn:disabled { opacity: .6; }
+
+.note-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 5px 12px 5px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(14,165,233,.9);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.note-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-chip svg { width: 14px; height: 14px; fill: #fff; flex: none; }
+
+.glass-btn:disabled { opacity: .35; }
+.glass-btn.active { background: #FDE68A; border-color: #FDE68A; }
+.glass-btn.active svg { fill: #0F172A; }
+.glass-lg { width: 52px; height: 52px; }
+
+/* ---------- Kamera: Zoom, Fokus, Vorher-Bild ---------- */
+
+#video { touch-action: none; }
+
+.ghost {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: .38;
+  pointer-events: none;
+}
+
+.focus-ring {
+  position: absolute;
+  width: 76px;
+  height: 76px;
+  margin: -38px 0 0 -38px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
+  pointer-events: none;
+}
+.focus-ring.animate { animation: focus .9s ease forwards; }
+@keyframes focus {
+  0% { transform: scale(1.4); opacity: 0; }
+  20% { transform: scale(1); opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.zoom-bar {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.45);
+}
+.zoom-btn {
+  min-width: 44px;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.zoom-btn.active { background: #fff; color: var(--text); }
+
+.control-row {
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+.control-row .side { display: flex; justify-content: center; }
+
+.ghost-btn {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #222;
+  cursor: pointer;
+}
+.ghost-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ghost-btn.off img { opacity: .35; }
+.ghost-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1px 0;
+  background: rgba(0,0,0,.6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--gradient);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ---------- Auswahlfenster „Adresse & Notiz“ ---------- */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15,23,42,0);
+  transition: background .2s ease;
+}
+.sheet-backdrop.open { background: rgba(15,23,42,.45); }
+
+.sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 24px 24px 0 0;
+  transform: translateY(100%);
+  transition: transform .22s ease;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.sheet-backdrop.open .sheet { transform: none; }
+
+.sheet-handle {
+  width: 40px;
+  height: 5px;
+  margin: 10px auto 2px;
+  border-radius: 3px;
+  background: #CBD5E1;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px 4px 20px;
+}
+.sheet-head h2 { margin: 0; font-size: 20px; font-weight: 800; }
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.icon-btn svg { width: 20px; height: 20px; fill: var(--text); }
+
+.sheet-body {
+  overflow-y: auto;
+  padding: 0 16px 12px;
+  -webkit-overflow-scrolling: touch;
+}
+.sheet-label {
+  margin: 18px 4px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.group-label {
+  margin: 14px 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.addr-opt {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.addr-opt + .addr-opt { margin-top: 8px; }
+.addr-opt.selected { border-color: var(--accent); }
+
+.radio {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #CBD5E1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.addr-opt.selected .radio { border-color: var(--accent); }
+.addr-opt.selected .radio::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--gradient);
+}
+
+.addr-opt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.addr-opt-title { font-size: 15px; font-weight: 700; }
+.addr-opt-sub { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.addr-opt-badge {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.addr-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mini-spinner {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #CBD5E1;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+.input {
+  width: 100%;
+  height: 50px;
+  padding: 0 14px;
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* verhindert automatisches Hineinzoomen */
+  outline: none;
+}
+.input:focus { border-color: var(--accent); }
+.manual-row { margin-top: 10px; }
+.manual-row.selected .input { border-color: var(--accent); }
+
+.input-wrap { position: relative; }
+.input-wrap .input { padding-right: 48px; }
+.input-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  margin-top: -18px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.input-clear svg { width: 18px; height: 18px; fill: var(--muted); }
+
+.note-recent { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.note-pill {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sheet-foot { padding: 10px 16px 16px; }
+.sheet-foot .btn-primary { width: 100%; }

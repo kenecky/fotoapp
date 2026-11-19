@@ -8,6 +8,17 @@ Das Ergebnis wird angezeigt und kann heruntergeladen oder geteilt werden.
 - **Video:** mit Ton, max. 2 Minuten, Full HD. Der Stempel läuft live mit
   (Uhrzeit sekundengenau, Koordinaten/Adresse aktualisieren sich bei Bewegung).
   Wird die App während der Aufnahme verlassen, wird das Video beendet und gespeichert.
+- **Vorher / Nachher:** Vorher-Bild aus der Galerie wählen, Nachher-Foto live aufnehmen
+  (Vorher-Bild wird zum Ausrichten halbtransparent eingeblendet). Beide Bilder werden
+  zu einem Bild zusammengesetzt (Hochformat nebeneinander, Querformat untereinander).
+- **Adresse & Notiz:** Die Adresse lässt sich aus einer Liste der Hausnummern in der Nähe
+  (OpenStreetMap/Overpass, ca. 80 m) wählen oder von Hand eingeben. Dazu eine Notiz,
+  die im Stempel erscheint. Zuletzt verwendete Adressen und Notizen werden auf dem Handy gemerkt.
+- **Kamera:** Taschenlampe, Zoom (Buttons oder zwei Finger), Antippen zum Scharfstellen
+  (je nachdem, was das Handy unterstützt).
+- **Dateien:** Aufnahmezeit, GPS und Beschreibung stehen zusätzlich in den EXIF-Daten
+  (z. B. für die Kartenansicht in Google Fotos). Dateiname mit Straße, z. B.
+  `Foto_2026-11-19_14-32-05_Musterstrasse-12.jpg`.
 
 - Keine Anmeldung, kein Server, keine Datenspeicherung online.
 - Für die Adresse wird nur die GPS-Position an OpenStreetMap (Nominatim) gesendet.
@@ -20,7 +31,8 @@ Das Ergebnis wird angezeigt und kann heruntergeladen oder geteilt werden.
 |---|---|
 | `index.html` | Seitenaufbau (Kamera, Verarbeitung, Ergebnis) |
 | `style.css` | Aussehen |
-| `app.js` | Kamera, GPS, Adresse, Stempel, Download |
+| `app.js` | Kamera, GPS, Adresse, Stempel, Video, Vorher/Nachher, Download |
+| `exif.js` | EXIF-Daten schreiben (Zeit, GPS, Beschreibung) und Aufnahmedatum lesen |
 | `manifest.webmanifest`, `icons/` | Installation als App auf dem Handy |
 | `sw.js` | Service Worker (App startet auch offline) |
 
