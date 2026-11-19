@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * FotoApp – Fotos und Videos aufnehmen und mit Zeitstempel, GPS-Koordinaten und Adresse stempeln.
+ * Hier & Jetzt – Fotos und Videos aufnehmen und mit Zeitstempel, GPS-Koordinaten und Adresse stempeln.
  * Alles passiert im Browser. Es werden keine Daten auf einem Server gespeichert.
  * Für die Adresse wird nur die Position an OpenStreetMap (Nominatim) geschickt.
  */

@@ -1,4 +1,4 @@
-# FotoApp
+# Hier & Jetzt
 
 Web-App (PWA) für Android: Fotos und Videos aufnehmen und automatisch mit
 **Datum/Uhrzeit**, **GPS-Koordinaten** (mit Genauigkeit) und **Adresse** stempeln.

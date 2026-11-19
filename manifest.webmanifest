@@ -1,6 +1,6 @@
 {
-  "name": "FotoApp – Foto mit Zeit & Standort",
-  "short_name": "FotoApp",
+  "name": "Hier & Jetzt – Fotos mit Zeit & Standort",
+  "short_name": "Hier & Jetzt",
   "description": "Fotos mit Zeitstempel, GPS-Koordinaten und Adresse.",
   "lang": "de",
   "start_url": "./",
