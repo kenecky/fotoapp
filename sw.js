@@ -1,6 +1,6 @@
 // Service Worker: hält die App-Dateien offline vor.
 // Bei jeder Änderung an den App-Dateien die Versionsnummer erhöhen.
-const CACHE = 'fotoapp-v16';
+const CACHE = 'fotoapp-v17';
 const FILES = [
   './',
   './index.html',
