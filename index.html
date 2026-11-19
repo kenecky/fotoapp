@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>FotoApp</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Kamera-Ansicht -->
+  <section id="view-camera" class="view">
+    <video id="video" autoplay playsinline muted></video>
+
+    <div class="status">
+      <div id="gps-chip" class="chip chip-wait">GPS wird gesucht …</div>
+      <div id="addr-line" class="addr"></div>
+    </div>
+
+    <div id="cam-message" class="message hidden"></div>
+
+    <div class="controls">
+      <button id="btn-shutter" class="shutter" aria-label="Foto aufnehmen" disabled></button>
+    </div>
+  </section>
+
+  <!-- Verarbeitung -->
+  <section id="view-busy" class="view hidden">
+    <div class="spinner"></div>
+    <p id="busy-text">Foto wird verarbeitet …</p>
+  </section>
+
+  <!-- Ergebnis -->
+  <section id="view-result" class="view hidden">
+    <div class="result-image">
+      <img id="result-img" alt="Aufgenommenes Foto mit Stempel">
+    </div>
+    <div class="result-actions">
+      <button id="btn-download" class="btn btn-primary">Herunterladen</button>
+      <button id="btn-share" class="btn hidden">Teilen</button>
+      <button id="btn-new" class="btn">Neues Foto</button>
+    </div>
+  </section>
+
+  <canvas id="canvas" class="hidden"></canvas>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: #fff;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hidden { display: none !important; }
+
+.view {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Kamera ---------- */
+
+#video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* zeigt genau den Bildausschnitt, der auch gespeichert wird */
+  background: #000;
+}
+
+.status {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: calc(env(safe-area-inset-top) + 12px) 16px 24px;
+  background: linear-gradient(rgba(0,0,0,.6), rgba(0,0,0,0));
+  pointer-events: none;
+}
+
+.chip {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.chip-wait { background: #555; }
+.chip-good { background: #1e8e3e; }
+.chip-medium { background: #c77700; }
+.chip-bad { background: #c5221f; }
+
+.addr {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.35;
+  text-shadow: 0 1px 2px #000;
+}
+
+.message {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 40%;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(30,30,30,.92);
+  font-size: 16px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px calc(env(safe-area-inset-bottom) + 28px);
+  background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.5));
+}
+
+.shutter {
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  border: 5px solid #fff;
+  background: rgba(255,255,255,.35);
+  padding: 0;
+  cursor: pointer;
+}
+.shutter:active:not(:disabled) { background: #fff; transform: scale(.94); }
+.shutter:disabled { opacity: .4; }
+
+/* ---------- Verarbeitung ---------- */
+
+#view-busy {
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-size: 16px;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 5px solid rgba(255,255,255,.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Ergebnis ---------- */
+
+.result-image {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top) + 8px) 8px 8px;
+}
+
+#result-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px calc(env(safe-area-inset-bottom) + 16px);
+  background: #111;
+}
+
+.btn {
+  flex: 1 1 30%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 12px;
+  background: #333;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:active { filter: brightness(1.2); }
+.btn-primary { background: #1a73e8; flex-basis: 100%; }
