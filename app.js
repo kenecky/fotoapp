@@ -2476,6 +2476,7 @@ function showStart() {
   clearBefore();
   discardSeries();
   show(el.viewStart);
+  fitStartPage();
 }
 
 async function askDiscardSeries() {
@@ -2635,6 +2636,28 @@ document.addEventListener('visibilitychange', () => {
 
 // Anzeige regelmäßig aktualisieren (z. B. wenn die Position veraltet)
 setInterval(() => { updateGpsUi(); updateTimeUi(); }, 5000);
+
+/* Startseite automatisch einpassen: so lange kompakter, bis nichts mehr übersteht */
+let fitFrame = null;
+function fitStartPage() {
+  if (fitFrame) return;
+  fitFrame = requestAnimationFrame(() => {
+    fitFrame = null;
+    const v = el.viewStart;
+    if (!isVisible(v)) return;
+    v.classList.remove('fit-1', 'fit-2', 'fit-3');
+    for (const level of ['fit-1', 'fit-2', 'fit-3']) {
+      if (v.scrollHeight <= v.clientHeight + 1) break;
+      v.classList.add(level);
+    }
+  });
+}
+window.addEventListener('resize', fitStartPage);
+window.addEventListener('load', fitStartPage);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', fitStartPage);
+// Texte (Adresse, Uhrzeit-Hinweis) ändern die Höhe – danach neu prüfen
+new MutationObserver(fitStartPage).observe(el.viewStart.querySelector('.start-footer'), { childList: true, subtree: true, characterData: true });
+fitStartPage();
 
 /* Startseite: von oben nach unten ziehen = App aktualisieren (nur im oberen Drittel) */
 (function setupPullToRefresh() {
