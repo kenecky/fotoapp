@@ -50,7 +50,7 @@ Das Ergebnis wird angezeigt und kann heruntergeladen oder geteilt werden.
 | `style.css` | Aussehen |
 | `app.js` | Kamera, GPS, Adresse, Stempel, Video, Vorher/Nachher, Download |
 | `export.js` | PDF-Bericht und ZIP-Datei erzeugen |
-| `branding/firmenlogo.png` | Firmenlogo (derzeit Testlogo) |
+| `branding/firmenlogo.png` | Firmenlogo (Malige Dienstleistungen) |
 | `history.js` | Verlauf (Speicherung auf dem Handy, 30 Tage) |
 | `editor.js` | Markieren (Pfeil, Kreis, Stift, Text) |
 | `exif.js` | EXIF-Daten schreiben (Zeit, GPS, Beschreibung) und Aufnahmedatum lesen |
