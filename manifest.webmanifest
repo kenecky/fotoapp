@@ -1,6 +1,6 @@
 {
-  "name": "Hier & Jetzt – Fotos mit Zeit & Standort",
-  "short_name": "Hier & Jetzt",
+  "name": "Proofshot – Fotos mit Zeit & Standort",
+  "short_name": "Proofshot",
   "description": "Fotos mit Zeitstempel, GPS-Koordinaten und Adresse.",
   "lang": "de",
   "start_url": "./",

@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Hier & Jetzt – Fotos und Videos aufnehmen und mit Zeitstempel, GPS-Koordinaten,
+ * Proofshot – Fotos und Videos aufnehmen und mit Zeitstempel, GPS-Koordinaten,
  * Adresse, Notiz und Firmenlogo stempeln. Alles passiert im Browser, nichts wird online gespeichert.
  * Für Adressen wird nur die Position an OpenStreetMap (Nominatim / Overpass) geschickt,
  * für den Zeitabgleich wird die Uhrzeit des Webservers abgefragt.
@@ -2598,7 +2598,7 @@ async function createReport(items) {
   // Fußzeile auf jeder Seite
   doc.pages.forEach((page, i) => {
     doc.page = page;
-    const footer = `Hier & Jetzt · Fotobericht · Seite ${i + 1} von ${doc.pages.length}`;
+    const footer = `Proofshot · Fotobericht · Seite ${i + 1} von ${doc.pages.length}`;
     doc.text(footer, (doc.width - Pdf.textWidth(footer, 8)) / 2, doc.height - 30, 8, { color: MUTED });
   });
 

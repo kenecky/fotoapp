@@ -98,7 +98,7 @@ const Exif = (() => {
     const date = meta.date || new Date();
     const dt = exifDateTime(date);
 
-    const ifd0 = [ascii(0x0131, 'Hier & Jetzt'), ascii(0x0132, dt)];
+    const ifd0 = [ascii(0x0131, 'Proofshot'), ascii(0x0132, dt)];
     if (meta.description) ifd0.push(ascii(0x010E, meta.description));
     if (meta.artist) ifd0.push(ascii(0x013B, meta.artist));
 

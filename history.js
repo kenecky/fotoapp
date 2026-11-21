@@ -5,7 +5,7 @@
  * Ein Eintrag ist ein Foto, ein Video, ein Vorher/Nachher-Bild oder eine ganze Serie.
  */
 const HistoryStore = (() => {
-  const DB_NAME = 'hier-und-jetzt';
+  const DB_NAME = 'hier-und-jetzt'; // alter Name bleibt, damit der Verlauf erhalten bleibt
   const STORE = 'entries';
   const KEEP_DAYS = 30;
   let dbPromise = null;
