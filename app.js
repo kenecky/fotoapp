@@ -25,7 +25,7 @@ const CONFIG = {
   videoBitsPerSecond: 5000000,
   audioBitsPerSecond: 128000,
   compareMaxSide: 4096,        // max. Kantenlänge des Vorher/Nachher-Bildes
-  pdfImageMaxSide: 1600,       // Bildgröße im PDF-Bericht
+  pdfImageMaxSide: 1000,       // Bildgröße im PDF-Bericht
   timeSyncMaxAgeMs: 15 * 60 * 1000,  // so lange gilt ein Zeitabgleich
   timeSyncIntervalMs: 5 * 60 * 1000,
   timeWarnDiffMs: 60 * 1000,   // ab dieser Abweichung der Handyuhr wird gewarnt
@@ -2503,7 +2503,6 @@ async function createReport(items) {
   const BOTTOM = doc.height - 50;
   const TEXT = '#0F172A';
   const MUTED = '#64748B';
-  const ACCENT = '#0284C7';
   const now = trustedTime();
 
   const photos = items.filter((it) => it.kind !== 'video');
@@ -2551,48 +2550,37 @@ async function createReport(items) {
   }
   y += 12;
 
-  // Fotos
-  for (let i = 0; i < photos.length; i++) {
-    const p = photos[i];
-    const img = await jpegForPdf(p.blob, CONFIG.pdfImageMaxSide);
-    const maxH = 300;
-    let iw = CW;
+  // Fotos: 4 pro Seite (2 × 2), auch auf der ersten Seite. Alle Felder gleich groß,
+  // die Größe richtet sich nach dem Platz unter dem Kopf der ersten Seite.
+  // Ohne Bildunterschrift – Zeit, Adresse usw. stehen ja im Stempel.
+  const GAP = 12;
+  const cellW = (CW - GAP) / 2;
+  const cellH = (BOTTOM - y - GAP) / 2;
+  const fit = (img) => {
+    let iw = cellW;
     let ih = (img.height / img.width) * iw;
-    if (ih > maxH) {
-      ih = maxH;
+    if (ih > cellH) {
+      ih = cellH;
       iw = (img.width / img.height) * ih;
     }
-
-    const caption = [];
-    const head = `Foto ${i + 1} von ${photos.length} · ${formatTimestamp(p.meta.date)}${p.meta.verified ? ' · Zeit geprüft' : ' · Zeit ungeprüft'}`;
-    caption.push([head, true, TEXT]);
-    if (p.meta.note) caption.push([p.meta.note, true, ACCENT]);
-    if (p.meta.address) caption.push([oneLine(p.meta.address), false, TEXT]);
-    caption.push([p.meta.coords || 'Kein Standort verfügbar', false, MUTED]);
-    const extra = [p.meta.employee ? `Aufgenommen von ${p.meta.employee}` : '', p.meta.annotated ? 'mit Markierungen' : ''].filter(Boolean).join(' · ');
-    if (extra) caption.push([extra, false, MUTED]);
-    if (p.kind === 'compare') {
-      caption.push([`Vorher/Nachher-Vergleich${p.meta.compareDate ? ' · Vorher aufgenommen ' + formatShortDate(p.meta.compareDate) : ''}`, false, MUTED]);
-    }
-    const lines = [];
-    for (const [text, bold, color] of caption) {
-      for (const l of Pdf.wrap(text, 9.5, bold, CW)) lines.push([l, bold, color]);
-    }
-    const blockH = ih + 8 + lines.length * 13 + 18;
-
-    if (y + blockH > BOTTOM) {
+    return { iw, ih };
+  };
+  for (let i = 0; i < photos.length; i += 2) {
+    if (i > 0 && i % 4 === 0) {
       doc.newPage();
       y = M;
     }
-    doc.image(doc.addJpeg(img.bytes, img.width, img.height), M + (CW - iw) / 2, y, iw, ih);
-    y += ih + 8;
-    for (const [l, bold, color] of lines) {
-      doc.text(l, M, y, 9.5, { bold, color });
-      y += 13;
+    // Zwei Bilder nebeneinander, oben bündig; die Zeile ist so hoch wie das höhere Bild
+    const row = [];
+    for (const p of photos.slice(i, i + 2)) {
+      const img = await jpegForPdf(p.blob, CONFIG.pdfImageMaxSide);
+      row.push({ img, ...fit(img) });
     }
-    y += 6;
-    doc.line(M, y, M + CW, y, '#E2E8F0', 0.7);
-    y += 12;
+    row.forEach(({ img, iw, ih }, col) => {
+      const cx = M + col * (cellW + GAP);
+      doc.image(doc.addJpeg(img.bytes, img.width, img.height), cx + (cellW - iw) / 2, y, iw, ih);
+    });
+    y += Math.max(...row.map((r) => r.ih)) + GAP;
   }
 
   // Fußzeile auf jeder Seite

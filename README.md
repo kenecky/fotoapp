@@ -17,8 +17,8 @@ Das Ergebnis wird angezeigt und kann heruntergeladen oder geteilt werden.
   Adressen erscheinen nur in der Nähe und lassen sich löschen. Dazu eine Notiz im Stempel.
 - **Serie:** In der Foto-Kamera „Serie“ wählen, beliebig viele Fotos am Stück aufnehmen,
   mit „Fertig“ abschließen. Danach alle herunterladen, teilen, als ZIP oder als PDF-Bericht.
-- **PDF-Bericht:** Fotobericht mit Firmenlogo, Adresse, Zeitraum und allen Fotos mit
-  Zeit, Adresse, Koordinaten und Notiz (wird direkt auf dem Handy erzeugt).
+- **PDF-Bericht:** Fotobericht mit Firmenlogo, Adresse und Zeitraum, dazu 4 Fotos pro Seite
+  (Zeit, Adresse usw. stehen im Stempel der Fotos). Wird direkt auf dem Handy erzeugt.
 - **Firmenlogo:** erscheint rechts im Stempel und im PDF-Kopf. Zum Austauschen einfach
   `branding/firmenlogo.png` ersetzen (PNG mit transparentem Hintergrund, am besten im Querformat).
 - **Zeitabgleich:** Die Uhrzeit wird mit der Uhrzeit des Webservers abgeglichen. Der Stempel

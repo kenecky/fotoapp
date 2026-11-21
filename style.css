@@ -1602,3 +1602,6 @@ html, body { overscroll-behavior-y: none; } /* Chrome-eigenes Neuladen aus, wir 
   text-align: center;
   pointer-events: none;
 }
+
+/* ---------- Version 21: Seite selbst nie zoomen (nur Kamera-Zoom und Großansicht) ---------- */
+html, body { touch-action: pan-x pan-y; }
